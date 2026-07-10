@@ -1,0 +1,101 @@
+<Application x:Class="ClaudeUsage.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <!-- ダークテーマ配色 -->
+        <SolidColorBrush x:Key="Bg" Color="#F21E1E28" />
+        <SolidColorBrush x:Key="BgSection" Color="#2A2A38" />
+        <SolidColorBrush x:Key="Fg" Color="#E8E8F0" />
+        <SolidColorBrush x:Key="FgDim" Color="#9898A8" />
+        <SolidColorBrush x:Key="Accent" Color="#D97757" />
+        <SolidColorBrush x:Key="BarBack" Color="#3A3A4A" />
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Fg}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+
+        <!-- ツールチップのダークテーマ。
+             注: 暗黙TextBlockスタイル(前景=ほぼ白)がツールチップ内にも波及するため、
+             既定の明るい背景のままだと文字が見えず「表示されない」状態になる。
+             背景を暗色に固定して常に読めるようにする。 -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="{StaticResource BgSection}" />
+            <Setter Property="Foreground" Value="{StaticResource Fg}" />
+            <Setter Property="BorderBrush" Value="#55FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <!-- ヘッダーの小さいアイコンボタン -->
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource FgDim}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#44FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 複数プロバイダー表示用のダークタブ -->
+        <Style x:Key="DarkTabControl" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0,6,0,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel>
+                            <TabPanel DockPanel.Dock="Top" IsItemsHost="True" Background="Transparent" />
+                            <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter ContentSource="SelectedContent" />
+                            </Border>
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DarkTabItem" TargetType="TabItem">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="bd" CornerRadius="4" Padding="10,3" Margin="0,0,4,0"
+                                Background="Transparent">
+                            <ContentPresenter ContentSource="Header" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSection}" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsSelected" Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="bd" Property="Background" Value="#22FFFFFF" />
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Application.Resources>
+</Application>
