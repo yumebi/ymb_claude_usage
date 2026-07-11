@@ -88,12 +88,17 @@ dotnet run
 ## ダウンロード
 
 ビルド不要で使う場合は [Releases](https://github.com/yumebi/ymb_claude_usage/releases/latest) から
-`YmbClaudeUsage-Setup-<version>.exe` をダウンロードして実行するだけでインストールできる
-(self-contained、.NETランタイム別途インストール不要)。
+`YmbClaudeUsage-Setup-<version>.exe` をダウンロードして実行するだけでインストールできる。
 
 > **注意**: このインストーラーはコード署名されていません。ダウンロード・実行時に
 > Windows SmartScreenが「不明な発行元」として警告を表示する場合があります。
 > 「詳細情報」→「実行」で続行できます。
+
+> **.NET 10 Desktop Runtime が必要です**: 配布サイズと常駐メモリを抑えるため、フレームワーク依存
+> ビルド(ランタイム非同梱)で配布しています。未インストールの場合は初回起動時に自動でインストーラーへ
+> 誘導するダイアログが表示されます(.NET Runtime の標準挙動)。事前に入れておきたい場合は
+> [.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0) を
+> インストールしてください。
 
 ## ライセンス
 

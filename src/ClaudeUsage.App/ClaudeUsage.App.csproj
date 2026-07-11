@@ -10,6 +10,7 @@
     <AssemblyName>YmbClaudeUsage</AssemblyName>
     <RootNamespace>ClaudeUsage.App</RootNamespace>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <Version>1.0.0</Version>
     <Product>YMB Claude使用量モニター</Product>
     <AssemblyTitle>YMB Claude使用量モニター</AssemblyTitle>

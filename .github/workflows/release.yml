@@ -44,10 +44,10 @@ jobs:
           }
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Publish self-contained build
+      - name: Publish framework-dependent build
         run: >
           dotnet publish src/ClaudeUsage.App/ClaudeUsage.App.csproj
-          -c Release -r win-x64 --self-contained true
+          -c Release -r win-x64 --self-contained false
           -p:Version=${{ steps.version.outputs.version }}
           -o publish
 
