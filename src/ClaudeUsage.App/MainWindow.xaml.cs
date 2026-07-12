@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using ClaudeUsage.App.Models;
 using ClaudeUsage.App.Native;
+using ClaudeUsage.App.Services;
 using ClaudeUsage.App.Services.Providers;
 
 namespace ClaudeUsage.App;
@@ -43,6 +44,7 @@ public partial class MainWindow : Window
             _panels.Add(new ProviderPanelVM(p.Name));
 
         HeaderTitle.Text = _providers.Count == 1 ? "Claude Code 使用量" : "AI使用量モニター";
+        VersionText.Text = AppVersionInfo.Display;
         BuildLayout();
 
         Opacity = Math.Clamp(_settings.Opacity, 0.3, 1.0);

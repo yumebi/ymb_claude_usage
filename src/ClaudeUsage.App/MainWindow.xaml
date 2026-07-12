@@ -147,8 +147,16 @@
             <ContentControl x:Name="PanelHost" Margin="0,8,0,0" />
 
             <!-- ステータス -->
-            <TextBlock x:Name="StatusText" FontSize="9.5" Foreground="{StaticResource FgDim}"
-                       Margin="0,7,0,0" Text="読込中..." />
+            <Grid Margin="0,7,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" Grid.Column="0" FontSize="9.5" Foreground="{StaticResource FgDim}"
+                           Text="読込中..." VerticalAlignment="Center" />
+                <TextBlock x:Name="VersionText" Grid.Column="1" FontSize="9.5" Foreground="{StaticResource FgDim}"
+                           Opacity="0.65" Margin="8,0,0,0" VerticalAlignment="Center" />
+            </Grid>
         </StackPanel>
     </Border>
 </Window>

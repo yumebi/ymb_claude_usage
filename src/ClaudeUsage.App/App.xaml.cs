@@ -214,7 +214,7 @@ public partial class App : Application
         var newIcon = TrayIconRenderer.CreateHIcon(color, percent);
         var oldIcon = _currentHIcon;
         _currentHIcon = newIcon;
-        _tooltipText = $"Claude使用量: 週間 {percent:0}%";
+        _tooltipText = $"Claude使用量: 週間 {percent:0}% ({Services.AppVersionInfo.Display})";
 
         if (_hwndSource is not null)
         {
