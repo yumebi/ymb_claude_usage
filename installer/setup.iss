@@ -42,6 +42,13 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "autostart"; Description: "Windows起動時に自動起動する"; GroupDescription: "追加オプション:"
 
+[InstallDelete]
+; アップグレードインストール時に旧バージョンの残留ファイルを一掃してから新ファイルを配置する。
+; (self-contained時代のcoreclr.dll等が残ると、hostfxrがapp-localランタイムと誤認し
+;  グローバルの.NETランタイムを探さなくなる不具合があったため)
+; ユーザー設定は{app}の外(%APPDATA%\YmbClaudeUsage)に保存されているため影響なし。
+Type: filesandordirs; Name: "{app}"
+
 [Files]
 Source: "{#MyPublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
