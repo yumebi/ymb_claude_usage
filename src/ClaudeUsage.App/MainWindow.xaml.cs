@@ -341,11 +341,20 @@ public sealed class ProviderPanelVM : INotifyPropertyChanged
     public string? Error
     {
         get => _error;
-        set { Set(ref _error, value); Raise(nameof(ErrorVisibility)); }
+        set { Set(ref _error, value); Raise(nameof(ErrorVisibility)); Raise(nameof(ErrorBrush)); Raise(nameof(ErrorFontWeight)); }
     }
 
     public Visibility ErrorVisibility =>
         string.IsNullOrEmpty(Error) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>再ログインが必要なエラーは通常の警告色より目立つ色にする。</summary>
+    public Brush ErrorBrush => IsReLoginError
+        ? new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50))
+        : new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x00));
+
+    public FontWeight ErrorFontWeight => IsReLoginError ? FontWeights.Bold : FontWeights.Normal;
+
+    private bool IsReLoginError => !string.IsNullOrEmpty(Error) && Error.Contains("再ログイン", StringComparison.Ordinal);
 
     public Visibility TableVisibility =>
         TableTitle is not null || TableRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

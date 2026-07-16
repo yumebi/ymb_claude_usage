@@ -16,6 +16,13 @@ public sealed class CredentialStore
     private const string ClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
     private const string TokenEndpoint = "https://console.anthropic.com/v1/oauth/token";
 
+    /// <summary>
+    /// 時間ベースのフォールバック閾値。アクセストークンの期限切れからこの時間が経過しても
+    /// 一度も更新できていない(=何度もリフレッシュを試みたはずなのに失敗し続けている)場合、
+    /// invalid_grant を検知できないケースでも再ログイン推奨のシグナルを出す。
+    /// </summary>
+    private const long ReLoginThresholdMs = 30 * 60 * 1000;
+
     private static string CredentialsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
 
@@ -26,6 +33,12 @@ public sealed class CredentialStore
 
     /// <summary>直近のエラー内容(UI表示用)。正常時はnull。</summary>
     public string? LastError { get; private set; }
+
+    /// <summary>
+    /// 再ログイン(ターミナルで `claude` を実行してのOAuth再認証)が必要と判断された場合に true。
+    /// 正常に取得・回復できた時点で false に戻る。
+    /// </summary>
+    public bool NeedsReLogin { get; private set; }
 
     /// <summary>
     /// 有効なアクセストークンを返す。期限切れなら更新を試みる。
@@ -40,6 +53,7 @@ public sealed class CredentialStore
 
         if (string.IsNullOrEmpty(accessToken))
         {
+            NeedsReLogin = true;
             LastError = "アクセストークンなし。Claude Codeで再ログインしてください";
             return null;
         }
@@ -47,6 +61,7 @@ public sealed class CredentialStore
         // 期限まで5分以上あればそのまま使う
         if (IsFarFromExpiry(expiresAt))
         {
+            NeedsReLogin = false;
             LastError = null;
             return accessToken;
         }
@@ -54,9 +69,17 @@ public sealed class CredentialStore
         // 期限切れ → リフレッシュ(429バックオフ中はスキップして古いトークンで試す)
         if (string.IsNullOrEmpty(refreshToken))
         {
+            NeedsReLogin = true;
             LastError = "リフレッシュトークンなし。Claude Codeで再ログインしてください";
             return accessToken;
         }
+
+        // 時間ベースのフォールバック(判定2): invalid_grant 等のエラーコードで確定判定できない場合でも、
+        // 期限切れから長時間(30分以上)経過してなお一度も更新できていないなら再ログイン推奨とする。
+        var elapsedSinceExpiry = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - expiresAt;
+        if (elapsedSinceExpiry > ReLoginThresholdMs)
+            NeedsReLogin = true;
+
         if (DateTimeOffset.UtcNow < _refreshBackoffUntil)
             return accessToken;
 
@@ -110,6 +133,8 @@ public sealed class CredentialStore
                 client_id = ClientId,
             }, ct);
 
+            var responseText = await res.Content.ReadAsStringAsync(ct);
+
             if ((int)res.StatusCode == 429)
             {
                 // 他プロセス(Claude Code CLI等)が既にリフレッシュ済みの可能性があるため、
@@ -118,6 +143,8 @@ public sealed class CredentialStore
                 if (recovered is not null)
                     return recovered;
 
+                // レート制限は一時的な問題であり、refresh_token自体の失効(invalid_grant)とは
+                // 明確に区別する。ここでは NeedsReLogin を立てない。
                 _refreshBackoffUntil = DateTimeOffset.UtcNow.AddMinutes(10);
                 LastError = "トークン更新がレート制限中(自動再試行します)";
                 return null;
@@ -129,11 +156,20 @@ public sealed class CredentialStore
                 if (recovered is not null)
                     return recovered;
 
+                // 判定1(確定的): OAuth標準のエラーコードで invalid_grant なら、
+                // refresh_token が無効・失効・使用済みであることが確定しているので再ログイン必須とする。
+                if (TryGetOAuthErrorCode(responseText) == "invalid_grant")
+                {
+                    NeedsReLogin = true;
+                    LastError = "ログインの有効期限が切れています。ターミナルで `claude` を実行して再ログインしてください";
+                    return null;
+                }
+
                 LastError = $"トークン更新失敗 (HTTP {(int)res.StatusCode})。Claude Codeで再ログインしてください";
                 return null;
             }
 
-            var body = JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+            var body = JsonNode.Parse(responseText);
             var newAccess = body?["access_token"]?.GetValue<string>();
             if (string.IsNullOrEmpty(newAccess))
             {
@@ -152,12 +188,37 @@ public sealed class CredentialStore
             // 他のキーは保持したまま書き戻す
             await File.WriteAllTextAsync(CredentialsPath, root.ToJsonString(new() { WriteIndented = true }), ct);
 
+            NeedsReLogin = false;
             LastError = null;
             return newAccess;
         }
         catch (Exception ex)
         {
             LastError = $"トークン更新エラー: {ex.Message}";
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// OAuthトークンエンドポイントのエラーレスポンスから標準の `error` コード
+    /// (例: "invalid_grant")を取り出す。パース不能な場合は null。
+    /// レスポンス形は `{"error": "invalid_grant", ...}` の他、
+    /// `{"error": {"type": "invalid_grant", ...}}` のようにネストされる場合も考慮する。
+    /// </summary>
+    private static string? TryGetOAuthErrorCode(string responseText)
+    {
+        try
+        {
+            var node = JsonNode.Parse(responseText)?["error"];
+            return node switch
+            {
+                JsonValue v => v.GetValue<string>(),
+                JsonObject o => o["type"]?.GetValue<string>() ?? o["code"]?.GetValue<string>(),
+                _ => null,
+            };
+        }
+        catch
+        {
             return null;
         }
     }
@@ -178,6 +239,7 @@ public sealed class CredentialStore
             return null;
 
         // 他プロセスが既にリフレッシュ済み。バックオフに入らず、そのトークンをそのまま使う。
+        NeedsReLogin = false;
         LastError = null;
         return accessToken;
     }

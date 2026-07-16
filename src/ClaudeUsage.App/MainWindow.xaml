@@ -38,7 +38,8 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="{Binding Error}" FontSize="10.5" Foreground="#FFB300"
+                <TextBlock Text="{Binding Error}" FontSize="10.5" Foreground="{Binding ErrorBrush}"
+                           FontWeight="{Binding ErrorFontWeight}"
                            TextWrapping="Wrap" Margin="0,2,0,4"
                            Visibility="{Binding ErrorVisibility}" />
 

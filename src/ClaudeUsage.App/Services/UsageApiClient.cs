@@ -44,7 +44,9 @@ public sealed class UsageApiClient
             if (!res.IsSuccessStatusCode)
             {
                 var hint = (int)res.StatusCode == 401
-                    ? "(トークン更新待ち。しばらくして自動回復します)"
+                    ? _credentials.NeedsReLogin
+                        ? "(ログインの有効期限が切れています。ターミナルで `claude` を実行して再ログインしてください)"
+                        : "(トークン更新待ち。しばらくして自動回復します)"
                     : "";
                 return new UsageResult([], $"使用量API HTTP {(int)res.StatusCode} {hint}");
             }
