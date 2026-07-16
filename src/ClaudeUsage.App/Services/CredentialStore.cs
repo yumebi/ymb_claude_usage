@@ -33,6 +33,42 @@ public sealed class CredentialStore
     /// </summary>
     public async Task<string?> GetAccessTokenAsync(CancellationToken ct)
     {
+        var loaded = await LoadCredentialsAsync(ct);
+        if (loaded is null)
+            return null;
+        var (root, accessToken, refreshToken, expiresAt) = loaded.Value;
+
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            LastError = "アクセストークンなし。Claude Codeで再ログインしてください";
+            return null;
+        }
+
+        // 期限まで5分以上あればそのまま使う
+        if (IsFarFromExpiry(expiresAt))
+        {
+            LastError = null;
+            return accessToken;
+        }
+
+        // 期限切れ → リフレッシュ(429バックオフ中はスキップして古いトークンで試す)
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            LastError = "リフレッシュトークンなし。Claude Codeで再ログインしてください";
+            return accessToken;
+        }
+        if (DateTimeOffset.UtcNow < _refreshBackoffUntil)
+            return accessToken;
+
+        return await RefreshAsync(root!, refreshToken, ct) ?? accessToken;
+    }
+
+    /// <summary>
+    /// 認証ファイルを読み込み、(root, accessToken, refreshToken, expiresAt) を返す。
+    /// 読み込み失敗時はLastErrorを設定してnullを返す。
+    /// </summary>
+    private async Task<(JsonNode? Root, string? AccessToken, string? RefreshToken, long ExpiresAt)?> LoadCredentialsAsync(CancellationToken ct)
+    {
         JsonNode? root;
         try
         {
@@ -54,30 +90,13 @@ public sealed class CredentialStore
         var refreshToken = oauth?["refreshToken"]?.GetValue<string>();
         var expiresAt = oauth?["expiresAt"]?.GetValue<long>() ?? 0;
 
-        if (string.IsNullOrEmpty(accessToken))
-        {
-            LastError = "アクセストークンなし。Claude Codeで再ログインしてください";
-            return null;
-        }
+        return (root, accessToken, refreshToken, expiresAt);
+    }
 
-        // 期限まで5分以上あればそのまま使う
+    private static bool IsFarFromExpiry(long expiresAt)
+    {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (expiresAt - now > 5 * 60 * 1000)
-        {
-            LastError = null;
-            return accessToken;
-        }
-
-        // 期限切れ → リフレッシュ(429バックオフ中はスキップして古いトークンで試す)
-        if (string.IsNullOrEmpty(refreshToken))
-        {
-            LastError = "リフレッシュトークンなし。Claude Codeで再ログインしてください";
-            return accessToken;
-        }
-        if (DateTimeOffset.UtcNow < _refreshBackoffUntil)
-            return accessToken;
-
-        return await RefreshAsync(root!, refreshToken, ct) ?? accessToken;
+        return expiresAt - now > 5 * 60 * 1000;
     }
 
     private async Task<string?> RefreshAsync(JsonNode root, string refreshToken, CancellationToken ct)
@@ -93,12 +112,23 @@ public sealed class CredentialStore
 
             if ((int)res.StatusCode == 429)
             {
+                // 他プロセス(Claude Code CLI等)が既にリフレッシュ済みの可能性があるため、
+                // バックオフに入る前にファイルを再読込みして新しいアクセストークンがないか確認する。
+                var recovered = await TryRecoverFromOtherProcessAsync(ct);
+                if (recovered is not null)
+                    return recovered;
+
                 _refreshBackoffUntil = DateTimeOffset.UtcNow.AddMinutes(10);
                 LastError = "トークン更新がレート制限中(自動再試行します)";
                 return null;
             }
             if (!res.IsSuccessStatusCode)
             {
+                // 429以外の失敗でも、他プロセスが既に更新済みなら回復できる可能性がある。
+                var recovered = await TryRecoverFromOtherProcessAsync(ct);
+                if (recovered is not null)
+                    return recovered;
+
                 LastError = $"トークン更新失敗 (HTTP {(int)res.StatusCode})。Claude Codeで再ログインしてください";
                 return null;
             }
@@ -130,5 +160,25 @@ public sealed class CredentialStore
             LastError = $"トークン更新エラー: {ex.Message}";
             return null;
         }
+    }
+
+    /// <summary>
+    /// リフレッシュ失敗時に、他プロセス(Claude Code CLI等)が同じ認証ファイルを
+    /// 既に更新済みでないかを確認する。ファイル上のexpiresAtが十分先(5分以上)なら、
+    /// そのアクセストークンを「回復成功」として返す。古いままなら本当に失敗しているのでnull。
+    /// </summary>
+    private async Task<string?> TryRecoverFromOtherProcessAsync(CancellationToken ct)
+    {
+        var reloaded = await LoadCredentialsAsync(ct);
+        if (reloaded is null)
+            return null;
+
+        var (_, accessToken, _, expiresAt) = reloaded.Value;
+        if (string.IsNullOrEmpty(accessToken) || !IsFarFromExpiry(expiresAt))
+            return null;
+
+        // 他プロセスが既にリフレッシュ済み。バックオフに入らず、そのトークンをそのまま使う。
+        LastError = null;
+        return accessToken;
     }
 }
