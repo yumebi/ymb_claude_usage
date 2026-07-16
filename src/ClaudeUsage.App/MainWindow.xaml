@@ -31,7 +31,7 @@
                                             HorizontalAlignment="Left" Width="{Binding BarWidth}" />
                                 </Grid>
                                 <TextBlock Text="{Binding ResetText}" FontSize="10" Margin="0,2,0,0"
-                                           Foreground="{StaticResource FgDim}"
+                                           FontWeight="SemiBold" Foreground="{Binding ValueBrush}"
                                            Visibility="{Binding ResetVisibility}" />
                             </StackPanel>
                         </DataTemplate>
