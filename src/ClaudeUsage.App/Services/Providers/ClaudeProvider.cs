@@ -21,6 +21,9 @@ public sealed class ClaudeProvider : IUsageProvider
     /// <summary>週間(全モデル)の使用率。トレイアイコンの色に使う。未取得ならnull。</summary>
     public double? WeeklyPercent { get; private set; }
 
+    /// <summary>直近に取得した使用量枠。リセット時刻の監視に使う。</summary>
+    public IReadOnlyList<UsageBucket> Buckets => _buckets;
+
     public ClaudeProvider(HttpClient http, Func<int> refreshMinutes)
     {
         _api = new UsageApiClient(http, new CredentialStore(http));

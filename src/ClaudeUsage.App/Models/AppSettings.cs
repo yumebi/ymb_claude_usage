@@ -32,6 +32,9 @@ public sealed class AppSettings
     /// <summary>ウィンドウの不透明度(0.3〜1.0)。</summary>
     public double Opacity { get; set; } = 0.95;
 
+    /// <summary>セッション枠・週間枠のリセット時にベルを鳴らすか。</summary>
+    public bool ResetBell { get; set; } = true;
+
     /// <summary>複数プロバイダー時のパネル配置(タブ/縦並び/横並び)。</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DisplayMode DisplayMode { get; set; } = DisplayMode.Tabs;

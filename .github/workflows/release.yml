@@ -19,6 +19,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Run tests
+        run: dotnet test src/ClaudeUsage.Tests/ClaudeUsage.Tests.csproj
+
       - name: Compute version
         id: version
         shell: pwsh

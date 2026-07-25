@@ -15,6 +15,7 @@ public partial class App : Application
     private const int CmdRefresh = 1002;
     private const int CmdTopmost = 1003;
     private const int CmdDesktopPin = 1004;
+    private const int CmdResetBell = 1005;
     private const int CmdModeTabs = 1010;
     private const int CmdModeVertical = 1011;
     private const int CmdModeHorizontal = 1012;
@@ -122,6 +123,9 @@ public partial class App : Application
             case CmdDesktopPin:
                 _window?.SetDesktopPin(!(_window?.IsDesktopPinEnabled ?? false));
                 break;
+            case CmdResetBell:
+                _window?.ToggleResetBell();
+                break;
             case CmdModeTabs:
                 _window?.SetDisplayMode(DisplayMode.Tabs);
                 break;
@@ -164,6 +168,9 @@ public partial class App : Application
 
             var pinFlags = TrayInterop.MF_STRING | (_window?.IsDesktopPinEnabled == true ? TrayInterop.MF_CHECKED : 0);
             TrayInterop.AppendMenu(hMenu, pinFlags, (UIntPtr)CmdDesktopPin, "壁紙に固定 (WorkerW)");
+
+            var bellFlags = TrayInterop.MF_STRING | (_window?.IsResetBellEnabled == true ? TrayInterop.MF_CHECKED : 0);
+            TrayInterop.AppendMenu(hMenu, bellFlags, (UIntPtr)CmdResetBell, "リセット時にベルを鳴らす");
 
             var currentMode = _window?.CurrentDisplayMode ?? DisplayMode.Tabs;
             TrayInterop.AppendMenu(hSubMenu, TrayInterop.MF_STRING | (currentMode == DisplayMode.Tabs ? TrayInterop.MF_CHECKED : 0), (UIntPtr)CmdModeTabs, "タブ");

@@ -16,4 +16,9 @@
     <Company>yumebi</Company>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- リセット通知のベル音。exeに埋め込むことで、配布物から抜け落ちる余地をなくす -->
+    <Resource Include="Assets\*.wav" />
+  </ItemGroup>
+
 </Project>

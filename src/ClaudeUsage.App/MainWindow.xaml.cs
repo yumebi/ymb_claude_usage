@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private readonly ClaudeProvider _claude;
     private readonly List<IUsageProvider> _providers = [];
     private readonly List<ProviderPanelVM> _panels = [];
+    private readonly ResetBellService _bells;
     private bool _refreshing;
 
     /// <summary>週間使用率(トレイアイコン色用)。Claude の全モデル週間バケットの値を通知する。</summary>
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
 
     public bool IsTopmostEnabled => _settings.AlwaysOnTop;
     public bool IsDesktopPinEnabled => _settings.DesktopPin;
+    public bool IsResetBellEnabled => _settings.ResetBell;
     public DisplayMode CurrentDisplayMode => _settings.DisplayMode;
 
     public MainWindow()
@@ -67,8 +69,18 @@ public partial class MainWindow : Window
                 ApplyDesktopPin(true);
             RefreshNow();
         };
+        // リセット時刻に鳴らす。鳴った直後は新しいリセット時刻を取りに行かせる
+        _bells = new ResetBellService(() => _settings.ResetBell, RefreshNow);
+
         _timer.Tick += (_, _) => _ = RefreshAsync(force: false);
         _timer.Start();
+    }
+
+    /// <summary>リセット音の有無を切り替える。トレイメニューから呼ばれる。</summary>
+    public void ToggleResetBell()
+    {
+        _settings.ResetBell = !_settings.ResetBell;
+        _settings.Save();
     }
 
     public void RefreshNow() => _ = RefreshAsync(force: true);
@@ -99,6 +111,9 @@ public partial class MainWindow : Window
 
             if (_claude.WeeklyPercent is { } weekly)
                 UtilizationChanged?.Invoke(weekly);
+
+            // 次回リセット時刻を控え直す
+            _bells.UpdateSchedule(_claude.Buckets);
 
             StatusText.Text = $"更新 {DateTime.Now:HH:mm:ss}";
         }
