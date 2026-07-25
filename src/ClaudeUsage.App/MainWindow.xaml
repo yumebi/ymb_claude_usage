@@ -4,6 +4,7 @@
         Title="Claude使用量"
         SizeToContent="WidthAndHeight"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Foreground="{DynamicResource YmbFgBrush}"
         ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True">
     <Window.Resources>
 
@@ -26,7 +27,7 @@
                                                FontWeight="SemiBold" Foreground="{Binding ValueBrush}" />
                                 </Grid>
                                 <Grid Margin="0,3,0,0" Height="7" Visibility="{Binding BarVisibility}">
-                                    <Border Background="{StaticResource BarBack}" CornerRadius="3.5" />
+                                    <Border Background="{DynamicResource BarBack}" CornerRadius="3.5" />
                                     <Border Background="{Binding BarBrush}" CornerRadius="3.5"
                                             HorizontalAlignment="Left" Width="{Binding BarWidth}" />
                                 </Grid>
@@ -44,11 +45,11 @@
                            Visibility="{Binding ErrorVisibility}" />
 
                 <!-- テーブル(ローカル集計 / 任意の行) -->
-                <Border Background="{StaticResource BgSection}" CornerRadius="6" Padding="10,7" Margin="0,4,0,0"
+                <Border Background="{DynamicResource YmbSurfaceBrush}" CornerRadius="6" Padding="10,7" Margin="0,4,0,0"
                         Visibility="{Binding TableVisibility}">
                     <StackPanel>
                         <TextBlock Text="{Binding TableTitle}" FontSize="10.5"
-                                   Foreground="{StaticResource FgDim}" Margin="0,0,0,5"
+                                   Foreground="{DynamicResource YmbFgDimBrush}" Margin="0,0,0,5"
                                    Visibility="{Binding TableTitleVisibility}" />
                         <Grid Visibility="{Binding TableHeaderVisibility}">
                             <Grid.ColumnDefinitions>
@@ -56,11 +57,11 @@
                                 <ColumnDefinition Width="70" />
                                 <ColumnDefinition Width="70" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Header1}" FontSize="10" Foreground="{StaticResource FgDim}" />
+                            <TextBlock Text="{Binding Header1}" FontSize="10" Foreground="{DynamicResource YmbFgDimBrush}" />
                             <TextBlock Grid.Column="1" Text="{Binding Header2}" FontSize="10"
-                                       Foreground="{StaticResource FgDim}" HorizontalAlignment="Right" />
+                                       Foreground="{DynamicResource YmbFgDimBrush}" HorizontalAlignment="Right" />
                             <TextBlock Grid.Column="2" Text="{Binding Header3}" FontSize="10"
-                                       Foreground="{StaticResource FgDim}" HorizontalAlignment="Right" />
+                                       Foreground="{DynamicResource YmbFgDimBrush}" HorizontalAlignment="Right" />
                         </Grid>
                         <ItemsControl ItemsSource="{Binding TableRows}" Margin="0,3,0,0">
                             <ItemsControl.ItemTemplate>
@@ -84,7 +85,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock Text="{Binding EmptyText}" FontSize="10.5"
-                                   Foreground="{StaticResource FgDim}"
+                                   Foreground="{DynamicResource YmbFgDimBrush}"
                                    Visibility="{Binding EmptyVisibility}" />
                     </StackPanel>
                 </Border>
@@ -96,7 +97,7 @@
             <Border BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="8"
                     Padding="8,6" Margin="0,0,6,6" Background="#11FFFFFF">
                 <StackPanel>
-                    <TextBlock Text="{Binding Name}" Foreground="{StaticResource Accent}"
+                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource YmbAccentBrush}"
                                FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4" />
                     <ContentPresenter Content="{Binding}"
                                       ContentTemplate="{StaticResource ProviderPanelTemplate}" />
@@ -115,7 +116,7 @@
 
     </Window.Resources>
 
-    <Border CornerRadius="10" Background="{StaticResource Bg}" Padding="14,10,14,12"
+    <Border CornerRadius="10" Background="{DynamicResource YmbBgTranslucentBrush}" Padding="14,10,14,12"
             BorderBrush="#33FFFFFF" BorderThickness="1">
         <StackPanel>
 
@@ -127,15 +128,15 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="HeaderTitle" Text="Claude Code 使用量" FontWeight="SemiBold" FontSize="13"
-                           Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Style="{StaticResource IconButton}" Content="🔄"
+                           Foreground="{DynamicResource YmbAccentBrush}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Style="{StaticResource YmbIconButton}" Content="🔄"
                         ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="5000"
                         Click="Refresh_Click">
                     <Button.ToolTip>
                         <ToolTip Placement="Bottom" Content="今すぐ更新" />
                     </Button.ToolTip>
                 </Button>
-                <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="✕"
+                <Button Grid.Column="2" Style="{StaticResource YmbIconButton}" Content="✕"
                         ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="5000"
                         Click="Hide_Click">
                     <Button.ToolTip>
@@ -153,9 +154,9 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="StatusText" Grid.Column="0" FontSize="9.5" Foreground="{StaticResource FgDim}"
+                <TextBlock x:Name="StatusText" Grid.Column="0" FontSize="9.5" Foreground="{DynamicResource YmbFgDimBrush}"
                            Text="読込中..." VerticalAlignment="Center" />
-                <TextBlock x:Name="VersionText" Grid.Column="1" FontSize="9.5" Foreground="{StaticResource FgDim}"
+                <TextBlock x:Name="VersionText" Grid.Column="1" FontSize="9.5" Foreground="{DynamicResource YmbFgDimBrush}"
                            Opacity="0.65" Margin="8,0,0,0" VerticalAlignment="Center" />
             </Grid>
         </StackPanel>
