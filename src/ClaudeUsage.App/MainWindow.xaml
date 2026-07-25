@@ -133,7 +133,7 @@
                         ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="5000"
                         Click="Refresh_Click">
                     <Button.ToolTip>
-                        <ToolTip Placement="Bottom" Content="今すぐ更新" />
+                        <ToolTip Placement="Bottom" Content="データを再取得" />
                     </Button.ToolTip>
                 </Button>
                 <Button Grid.Column="2" Style="{StaticResource YmbIconButton}" Content="✕"

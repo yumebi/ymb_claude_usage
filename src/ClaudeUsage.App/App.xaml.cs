@@ -150,8 +150,13 @@ public partial class App : Application
         var hSubMenu = TrayInterop.CreatePopupMenu();
         try
         {
+            // 並びはYMB共通: 表示切替 → アプリ固有項目 → 区切り → 終了
+            //
+            // 「今すぐ更新」ではなく「データを再取得」。他のYMBアプリでは
+            // 「更新を確認」がアプリ本体のバージョン更新を指すため、同じ「更新」で
+            // 使用量データの再取得を表すと取り違えられる。
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdToggle, "表示/非表示");
-            TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdRefresh, "今すぐ更新");
+            TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdRefresh, "データを再取得");
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_SEPARATOR, UIntPtr.Zero, null);
 
             var topmostFlags = TrayInterop.MF_STRING | (_window?.IsTopmostEnabled == true ? TrayInterop.MF_CHECKED : 0);
