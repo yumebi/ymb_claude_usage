@@ -18,6 +18,13 @@ internal static class TrayInterop
     public const uint NIF_MESSAGE = 0x00000001;
     public const uint NIF_ICON = 0x00000002;
     public const uint NIF_TIP = 0x00000004;
+    public const uint NIF_INFO = 0x00000010;
+
+    /// <summary>バルーン通知の情報アイコン。</summary>
+    public const uint NIIF_NONE = 0x00000000;
+    public const uint NIIF_INFO = 0x00000001;
+    public const uint NIIF_WARNING = 0x00000002;
+    public const uint NIIF_ERROR = 0x00000003;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct NOTIFYICONDATA
@@ -37,7 +44,7 @@ internal static class TrayInterop
         public int uTimeoutOrVersion;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
         public string szInfoTitle;
-        public int dwInfoFlags;
+        public uint dwInfoFlags;
         public Guid guidItem;
         public IntPtr hBalloonIcon;
     }

@@ -5,12 +5,14 @@ namespace ClaudeUsage.App.Services.Providers;
 /// <summary>
 /// 既存の Claude 表示(OAuth使用量API + ローカルJSONL集計)を1プロバイダーとしてまとめたもの。
 /// ローカル集計は毎回、APIは設定間隔ごと(手動更新は即時)という従来の間隔ロジックを維持する。
+/// パネルには ゲージ + モデル別テーブル(費用行付き) + プロジェクト別テーブル + 推移グラフ を出す。
 /// </summary>
 public sealed class ClaudeProvider : IUsageProvider
 {
     private readonly UsageApiClient _api;
     private readonly LocalUsageScanner _scanner = new();
     private readonly Func<int> _refreshMinutes;
+    private readonly UsageHistoryStore? _history;
 
     private DateTimeOffset _lastApiFetch = DateTimeOffset.MinValue;
     private IReadOnlyList<UsageBucket> _buckets = [];
@@ -24,10 +26,11 @@ public sealed class ClaudeProvider : IUsageProvider
     /// <summary>直近に取得した使用量枠。リセット時刻の監視に使う。</summary>
     public IReadOnlyList<UsageBucket> Buckets => _buckets;
 
-    public ClaudeProvider(HttpClient http, Func<int> refreshMinutes)
+    public ClaudeProvider(HttpClient http, Func<int> refreshMinutes, UsageHistoryStore? history = null)
     {
         _api = new UsageApiClient(http, new CredentialStore(http));
         _refreshMinutes = refreshMinutes;
+        _history = history;
     }
 
     public async Task<ProviderPanelData> FetchAsync(bool force, CancellationToken ct)
@@ -59,12 +62,39 @@ public sealed class ClaudeProvider : IUsageProvider
             {
                 var week = kv.Value;
                 local.Today.TryGetValue(kv.Key, out var today);
+                var cost = CostEstimator.Estimate(kv.Key, week);
                 var tooltip = $"{kv.Key}\n" +
                     $"今日: 入力 {today?.Input ?? 0:N0} / 出力 {today?.Output ?? 0:N0} / キャッシュ読取 {today?.CacheRead ?? 0:N0}\n" +
                     $"7日間: 入力 {week.Input:N0} / 出力 {week.Output:N0} / キャッシュ読取 {week.CacheRead:N0}\n" +
-                    $"リクエスト数(7日): {week.Requests:N0}";
+                    $"リクエスト数(7日): {week.Requests:N0}\n" +
+                    $"推定費用(7日): ${cost:0.##}";
                 return new TableRow(
                     PrettyModelName(kv.Key),
+                    FormatTokens((today?.Input ?? 0) + (today?.Output ?? 0)),
+                    FormatTokens(week.Input + week.Output),
+                    tooltip);
+            })
+            .ToList();
+
+        // モデル別テーブルの末尾に推定費用の合計行を足す
+        var weeklyCost = CostEstimator.EstimateAll(local.Week);
+        if (weeklyCost > 0)
+            rows.Add(new TableRow("推定費用 (7日間)", "", $"${weeklyCost:0.##}"));
+
+        // プロジェクト別テーブル(使用量の多い順・上位10件)
+        var projectRows = local.ProjectWeek
+            .OrderByDescending(kv => kv.Value.Input + kv.Value.Output)
+            .Take(10)
+            .Select(kv =>
+            {
+                var week = kv.Value;
+                local.ProjectToday.TryGetValue(kv.Key, out var today);
+                var tooltip = $"{kv.Key}\n" +
+                    $"今日: 入力 {today?.Input ?? 0:N0} / 出力 {today?.Output ?? 0:N0}\n" +
+                    $"7日間: 入力 {week.Input:N0} / 出力 {week.Output:N0} / キャッシュ読取 {week.CacheRead:N0}\n" +
+                    $"リクエスト数(7日): {week.Requests:N0}";
+                return new TableRow(
+                    kv.Key,
                     FormatTokens((today?.Input ?? 0) + (today?.Output ?? 0)),
                     FormatTokens(week.Input + week.Output),
                     tooltip);
@@ -77,7 +107,13 @@ public sealed class ClaudeProvider : IUsageProvider
             "モデル", "今日", "7日間",
             rows,
             "直近7日間の記録なし",
-            _apiError);
+            _apiError)
+        {
+            Trend = _history?.Points,
+            SecondaryTitle = "プロジェクト別(ローカル集計)",
+            SecondaryRows = projectRows,
+            SecondaryEmptyText = "直近7日間のプロジェクト記録なし",
+        };
     }
 
     private static string PrettyModelName(string model)

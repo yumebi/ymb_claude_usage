@@ -22,6 +22,17 @@ public sealed record ProviderPanelData(
     string? EmptyText,
     string? Error)
 {
+    /// <summary>週間使用率(%)の推移(時系列順)。null なら推移グラフを表示しない。</summary>
+    public IReadOnlyList<double>? Trend { get; init; }
+
+    /// <summary>2つ目のテーブル(プロジェクト別集計など)。null なら表示しない。</summary>
+    public string? SecondaryTitle { get; init; }
+
+    public IReadOnlyList<TableRow> SecondaryRows { get; init; } = [];
+
+    /// <summary>2つ目のテーブルの空メッセージ。</summary>
+    public string? SecondaryEmptyText { get; init; }
+
     public static ProviderPanelData FromError(string error) =>
         new([], null, "", "", "", [], null, error);
 }

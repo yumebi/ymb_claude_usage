@@ -44,6 +44,21 @@
                            TextWrapping="Wrap" Margin="0,2,0,4"
                            Visibility="{Binding ErrorVisibility}" />
 
+                <!-- 推移グラフ(週間使用率の折れ線) -->
+                <Border Background="{DynamicResource YmbSurfaceBrush}" CornerRadius="6"
+                        Padding="8,6" Margin="0,4,0,0"
+                        Visibility="{Binding TrendVisibility}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding TrendTitle}" FontSize="10.5"
+                                   Foreground="{DynamicResource YmbFgDimBrush}" Margin="0,0,0,4" />
+                        <Grid Height="26">
+                            <Border Background="{DynamicResource BarBack}" CornerRadius="3" />
+                            <Polyline Points="{Binding TrendPoints}" Stroke="{Binding TrendBrush}"
+                                      StrokeThickness="1.6" StrokeLineJoin="Round" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <!-- テーブル(ローカル集計 / 任意の行) -->
                 <Border Background="{DynamicResource YmbSurfaceBrush}" CornerRadius="6" Padding="10,7" Margin="0,4,0,0"
                         Visibility="{Binding TableVisibility}">
@@ -87,6 +102,52 @@
                         <TextBlock Text="{Binding EmptyText}" FontSize="10.5"
                                    Foreground="{DynamicResource YmbFgDimBrush}"
                                    Visibility="{Binding EmptyVisibility}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 2つ目のテーブル(プロジェクト別集計など) -->
+                <Border Background="{DynamicResource YmbSurfaceBrush}" CornerRadius="6" Padding="10,7" Margin="0,4,0,0"
+                        Visibility="{Binding SecondaryVisibility}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SecondaryTitle}" FontSize="10.5"
+                                   Foreground="{DynamicResource YmbFgDimBrush}" Margin="0,0,0,5"
+                                   Visibility="{Binding SecondaryTitleVisibility}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="70" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="プロジェクト" FontSize="10" Foreground="{DynamicResource YmbFgDimBrush}" />
+                            <TextBlock Grid.Column="1" Text="今日" FontSize="10"
+                                       Foreground="{DynamicResource YmbFgDimBrush}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Column="2" Text="7日間" FontSize="10"
+                                       Foreground="{DynamicResource YmbFgDimBrush}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding SecondaryRows}" Margin="0,3,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,1.5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="70" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Label}" FontSize="11.5" FontWeight="SemiBold"
+                                                   ToolTip="{Binding Tooltip}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11.5"
+                                                   FontFamily="Consolas" HorizontalAlignment="Right"
+                                                   ToolTip="{Binding Tooltip}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Value2}" FontSize="11.5"
+                                                   FontFamily="Consolas" HorizontalAlignment="Right"
+                                                   ToolTip="{Binding Tooltip}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding SecondaryEmptyText}" FontSize="10.5"
+                                   Foreground="{DynamicResource YmbFgDimBrush}"
+                                   Visibility="{Binding SecondaryEmptyVisibility}" />
                     </StackPanel>
                 </Border>
             </StackPanel>

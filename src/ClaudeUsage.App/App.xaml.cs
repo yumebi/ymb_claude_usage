@@ -32,6 +32,7 @@ public partial class App : Application
     private IntPtr _currentHIcon;
     private string _tooltipText = "YMB Claude使用量モニター";
     private double _lastPercent;
+    private double _alertedLevel = -1;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -46,8 +47,57 @@ public partial class App : Application
 
         _window = new MainWindow();
         SetupTrayIcon();
-        _window.UtilizationChanged += percent => UpdateTrayIcon(percent);
+        _window.UtilizationChanged += OnUtilizationChanged;
         _window.Show();
+    }
+
+    /// <summary>
+    /// 使用率が上がって閾値(80/90/100%)を超えたらバルーンで通知する。
+    /// 下がりきったら(60%未満)再通知可能な状態に戻す。
+    /// </summary>
+    private void OnUtilizationChanged(double percent)
+    {
+        UpdateTrayIcon(percent);
+        CheckLimitApproach(percent);
+    }
+
+    private void CheckLimitApproach(double percent)
+    {
+        var level = percent >= 100 ? 100 : percent >= 90 ? 90 : percent >= 80 ? 80 : 0;
+        if (level == 0)
+        {
+            // 十分下がったら次の上昇でまた通知できるようにする
+            if (percent < 60)
+                _alertedLevel = -1;
+            return;
+        }
+
+        if (level <= _alertedLevel)
+            return;
+
+        _alertedLevel = level;
+        var (title, flags) = level switch
+        {
+            100 => ("Claude 使用量リミット到達", TrayInterop.NIIF_ERROR),
+            90 => ("Claude 使用量リミット間近", TrayInterop.NIIF_WARNING),
+            _ => ("Claude 使用量リミット接近", TrayInterop.NIIF_WARNING),
+        };
+        ShowBalloon(title, $"週間使用率が {percent:0.#}% になりました。", flags);
+    }
+
+    /// <summary>トレイアイコンのバルーン通知を表示する。</summary>
+    private void ShowBalloon(string title, string message, uint infoFlags)
+    {
+        if (_hwndSource is null)
+            return;
+
+        var data = CreateNotifyIconData();
+        data.uFlags = TrayInterop.NIF_INFO;
+        data.szInfoTitle = title;
+        data.szInfo = message;
+        data.dwInfoFlags = infoFlags;
+        data.uTimeoutOrVersion = 5000;
+        TrayInterop.Shell_NotifyIcon(TrayInterop.NIM_MODIFY, ref data);
     }
 
     /// <summary>

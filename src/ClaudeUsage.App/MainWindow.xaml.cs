@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly List<IUsageProvider> _providers = [];
     private readonly List<ProviderPanelVM> _panels = [];
     private readonly ResetBellService _bells;
+    private readonly UsageHistoryStore _history = new();
     private bool _refreshing;
 
     /// <summary>週間使用率(トレイアイコン色用)。Claude の全モデル週間バケットの値を通知する。</summary>
@@ -39,7 +40,8 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         // プロバイダー構築: Claude は常時、それ以外は providers.json から
-        _claude = new ClaudeProvider(_http, () => _settings.RefreshMinutes);
+        _history.Load();
+        _claude = new ClaudeProvider(_http, () => _settings.RefreshMinutes, _history);
         _providers.Add(_claude);
         _providers.AddRange(GenericRestProvider.LoadAll(_http));
         foreach (var p in _providers)
@@ -110,7 +112,10 @@ public partial class MainWindow : Window
                 ApplyData(_panels[i], results[i]);
 
             if (_claude.WeeklyPercent is { } weekly)
+            {
                 UtilizationChanged?.Invoke(weekly);
+                _history.Record(weekly);
+            }
 
             // 次回リセット時刻を控え直す
             _bells.UpdateSchedule(_claude.Buckets);
@@ -216,6 +221,10 @@ public partial class MainWindow : Window
         vm.TableRows = data.TableRows;
         vm.EmptyText = data.EmptyText;
         vm.Error = data.Error;
+        vm.Trend = data.Trend;
+        vm.SecondaryTitle = data.SecondaryTitle;
+        vm.SecondaryRows = data.SecondaryRows;
+        vm.SecondaryEmptyText = data.SecondaryEmptyText;
     }
 
     private static string FormatReset(DateTimeOffset? resetsAt)
@@ -352,6 +361,64 @@ public sealed class ProviderPanelVM : INotifyPropertyChanged
         set { Set(ref _emptyText, value); Raise(nameof(EmptyVisibility)); }
     }
 
+    private IReadOnlyList<TableRow> _secondaryRows = [];
+    public IReadOnlyList<TableRow> SecondaryRows
+    {
+        get => _secondaryRows;
+        set { Set(ref _secondaryRows, value); Raise(nameof(SecondaryVisibility)); Raise(nameof(SecondaryEmptyVisibility)); }
+    }
+
+    private string? _secondaryTitle;
+    public string? SecondaryTitle
+    {
+        get => _secondaryTitle;
+        set { Set(ref _secondaryTitle, value); Raise(nameof(SecondaryVisibility)); Raise(nameof(SecondaryTitleVisibility)); }
+    }
+
+    private string? _secondaryEmptyText;
+    public string? SecondaryEmptyText
+    {
+        get => _secondaryEmptyText;
+        set { Set(ref _secondaryEmptyText, value); Raise(nameof(SecondaryEmptyVisibility)); }
+    }
+
+    private IReadOnlyList<double>? _trend;
+    public IReadOnlyList<double>? Trend
+    {
+        get => _trend;
+        set
+        {
+            Set(ref _trend, value);
+            Raise(nameof(TrendVisibility));
+            BuildTrend();
+        }
+    }
+
+    /// <summary>推移グラフのタイトル(直近のポイント数付き)。</summary>
+    public string? TrendTitle => Trend is { Count: > 1 } points
+        ? $"週間使用率の推移 (直近{points.Count}回の更新)"
+        : null;
+
+    /// <summary>推移グラフの折れ線データ。プロット内座標(0..292 × 0..26)。</summary>
+    public PointCollection? TrendPoints { get; private set; }
+
+    /// <summary>推移グラフの折れ線色(現在値に応じた警告色)。</summary>
+    public Brush? TrendBrush { get; private set; }
+
+    public Visibility TrendVisibility => Trend is { Count: > 1 } ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>プロット領域の幅。折れ線のx座標を決めるのに使う。</summary>
+    public double TrendWidth => 292;
+
+    public Visibility SecondaryVisibility =>
+        SecondaryTitle is not null || SecondaryRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility SecondaryTitleVisibility =>
+        string.IsNullOrEmpty(SecondaryTitle) ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility SecondaryEmptyVisibility =>
+        SecondaryRows.Count == 0 && !string.IsNullOrEmpty(SecondaryEmptyText) ? Visibility.Visible : Visibility.Collapsed;
+
     private string? _error;
     public string? Error
     {
@@ -385,6 +452,45 @@ public sealed class ProviderPanelVM : INotifyPropertyChanged
         TableRows.Count == 0 && !string.IsNullOrEmpty(EmptyText) ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>
+    /// 履歴の使用率(%)を 292×26 のプロット領域に投影して折れ線ポイントを作る。
+    /// 0〜100% を縦方向の全幅に割り当て、左右に数pxの余白を取る。
+    /// </summary>
+    private void BuildTrend()
+    {
+        var points = Trend;
+        TrendPoints = null;
+        TrendBrush = null;
+        Raise(nameof(TrendTitle));
+
+        if (points is null || points.Count < 2)
+            return;
+
+        const double plotWidth = 292;
+        const double plotHeight = 26;
+        const double pad = 2.5;
+
+        var last = points[^1];
+        var brush = new SolidColorBrush(last switch
+        {
+            >= 80 => Color.FromRgb(0xEF, 0x53, 0x50),
+            >= 50 => Color.FromRgb(0xFF, 0xB3, 0x00),
+            _ => Color.FromRgb(0x66, 0xBB, 0x6A),
+        });
+        TrendBrush = brush;
+
+        var col = new PointCollection(points.Count);
+        var xStep = (plotWidth - pad * 2) / (points.Count - 1);
+        for (var i = 0; i < points.Count; i++)
+        {
+            var pct = Math.Clamp(points[i], 0, 100);
+            var x = pad + i * xStep;
+            var y = plotHeight - pad - (plotHeight - pad * 2) * pct / 100.0;
+            col.Add(new Point(x, y));
+        }
+        TrendPoints = col;
+    }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {

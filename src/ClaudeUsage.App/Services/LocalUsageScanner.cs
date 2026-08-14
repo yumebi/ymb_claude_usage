@@ -13,10 +13,12 @@ public sealed class ModelTotals
     public int Requests;
 }
 
-/// <summary>今日/過去7日間のモデル別集計結果。</summary>
+/// <summary>今日/過去7日間のモデル別・プロジェクト別集計結果。</summary>
 public sealed record LocalUsage(
     IReadOnlyDictionary<string, ModelTotals> Today,
-    IReadOnlyDictionary<string, ModelTotals> Week);
+    IReadOnlyDictionary<string, ModelTotals> Week,
+    IReadOnlyDictionary<string, ModelTotals> ProjectToday,
+    IReadOnlyDictionary<string, ModelTotals> ProjectWeek);
 
 /// <summary>
 /// ~/.claude/projects/**/*.jsonl(Claude Codeのセッションログ)を走査して
@@ -27,13 +29,18 @@ public sealed record LocalUsage(
 /// 重複排除(message.id + requestId)はファイルの日別集計を作り直すタイミングで1回だけ行う
 /// (ファイル単位のためファイルをまたいだ重複は排除されないが、実運用上は許容範囲)。
 /// today/week の判定は日付(ローカル日)単位の粒度で行う。
+/// プロジェクト名は各行の cwd のフォルダ名(未知・空なら「(不明)」)を使う。
 /// </summary>
 public sealed class LocalUsageScanner
 {
+    private sealed record ParsedDaily(
+        Dictionary<DateOnly, Dictionary<string, ModelTotals>> Daily,
+        Dictionary<string, Dictionary<DateOnly, Dictionary<string, ModelTotals>>> Projects);
+
     private sealed record FileCache(
         DateTime LastWriteUtc,
         long Length,
-        Dictionary<DateOnly, Dictionary<string, ModelTotals>> DailyTotals);
+        ParsedDaily Daily);
 
     private readonly Dictionary<string, FileCache> _cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -49,9 +56,11 @@ public sealed class LocalUsageScanner
 
         var today = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
         var week = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
+        var projectToday = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
+        var projectWeek = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
 
         if (!Directory.Exists(ProjectsRoot))
-            return new LocalUsage(today, week);
+            return new LocalUsage(today, week, projectToday, projectWeek);
 
         foreach (var path in Directory.EnumerateFiles(ProjectsRoot, "*.jsonl", SearchOption.AllDirectories))
         {
@@ -72,7 +81,7 @@ public sealed class LocalUsageScanner
                 _cache[path] = cached;
             }
 
-            foreach (var (date, models) in cached.DailyTotals)
+            foreach (var (date, models) in cached.Daily.Daily)
             {
                 if (date < weekStartDate)
                     continue;
@@ -84,9 +93,25 @@ public sealed class LocalUsageScanner
                         AddInto(today, model, totals);
                 }
             }
+
+            foreach (var (project, models) in cached.Daily.Projects)
+            {
+                foreach (var (date, modelTotals) in models)
+                {
+                    if (date < weekStartDate)
+                        continue;
+
+                    foreach (var (model, totals) in modelTotals)
+                    {
+                        AddInto(projectWeek, project, totals);
+                        if (date == todayDate)
+                            AddInto(projectToday, project, totals);
+                    }
+                }
+            }
         }
 
-        return new LocalUsage(today, week);
+        return new LocalUsage(today, week, projectToday, projectWeek);
     }
 
     private static void AddInto(Dictionary<string, ModelTotals> map, string model, ModelTotals src)
@@ -101,14 +126,14 @@ public sealed class LocalUsageScanner
     }
 
     /// <summary>
-    /// ファイルを1行ずつパースし、ローカル日付×モデルごとの集計を作る。
-    /// 生の Entry リストは保持せず、この場で集計値に畳み込む。
+    /// ファイルを1行ずつパースし、ローカル日付×モデル、およびプロジェクト×日付×モデルの
+    /// 集計を作る。生の Entry リストは保持せず、この場で集計値に畳み込む。
     /// 重複排除(message.id+requestId)はここで1回だけ行う。
     /// </summary>
-    private static Dictionary<DateOnly, Dictionary<string, ModelTotals>> ParseFileDaily(
-        string path, DateTimeOffset weekStart)
+    private static ParsedDaily ParseFileDaily(string path, DateTimeOffset weekStart)
     {
-        var result = new Dictionary<DateOnly, Dictionary<string, ModelTotals>>();
+        var daily = new Dictionary<DateOnly, Dictionary<string, ModelTotals>>();
+        var projects = new Dictionary<string, Dictionary<DateOnly, Dictionary<string, ModelTotals>>>(StringComparer.OrdinalIgnoreCase);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         try
         {
@@ -146,17 +171,28 @@ public sealed class LocalUsageScanner
                         continue;
 
                     var date = DateOnly.FromDateTime(ts.LocalDateTime);
-                    if (!result.TryGetValue(date, out var models))
-                        result[date] = models = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
+
+                    if (!daily.TryGetValue(date, out var models))
+                        daily[date] = models = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
 
                     if (!models.TryGetValue(model, out var t))
                         models[model] = t = new ModelTotals();
-
-                    t.Input += GetLong(usage, "input_tokens");
-                    t.Output += GetLong(usage, "output_tokens");
-                    t.CacheRead += GetLong(usage, "cache_read_input_tokens");
-                    t.CacheCreate += GetLong(usage, "cache_creation_input_tokens");
+                    AddTokens(t, usage);
                     t.Requests++;
+
+                    var project = ProjectName(root.TryGetProperty("cwd", out var cwdEl) &&
+                        cwdEl.ValueKind == JsonValueKind.String ? cwdEl.GetString() : null);
+
+                    if (!projects.TryGetValue(project, out var projDays))
+                        projects[project] = projDays = new Dictionary<DateOnly, Dictionary<string, ModelTotals>>();
+
+                    if (!projDays.TryGetValue(date, out var projModels))
+                        projDays[date] = projModels = new Dictionary<string, ModelTotals>(StringComparer.OrdinalIgnoreCase);
+
+                    if (!projModels.TryGetValue(model, out var pt))
+                        projModels[model] = pt = new ModelTotals();
+                    AddTokens(pt, usage);
+                    pt.Requests++;
                 }
                 catch (JsonException)
                 {
@@ -168,7 +204,31 @@ public sealed class LocalUsageScanner
         {
             // ロック中・削除済みファイルは無視
         }
-        return result;
+        return new ParsedDaily(daily, projects);
+    }
+
+    private static void AddTokens(ModelTotals t, JsonElement usage)
+    {
+        t.Input += GetLong(usage, "input_tokens");
+        t.Output += GetLong(usage, "output_tokens");
+        t.CacheRead += GetLong(usage, "cache_read_input_tokens");
+        t.CacheCreate += GetLong(usage, "cache_creation_input_tokens");
+    }
+
+    /// <summary>cwd のパスからフォルダ名をプロジェクト名として返す。</summary>
+    private static string ProjectName(string? cwd)
+    {
+        if (string.IsNullOrWhiteSpace(cwd))
+            return "(不明)";
+        try
+        {
+            var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(cwd));
+            return string.IsNullOrWhiteSpace(name) ? cwd : name;
+        }
+        catch
+        {
+            return cwd;
+        }
     }
 
     private static long GetLong(JsonElement obj, string name) =>
