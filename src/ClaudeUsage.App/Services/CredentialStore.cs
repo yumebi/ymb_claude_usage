@@ -185,8 +185,10 @@ public sealed class CredentialStore
             var expiresIn = body?["expires_in"]?.GetValue<long>() ?? 3600;
             oauth["expiresAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiresIn * 1000;
 
-            // 他のキーは保持したまま書き戻す
-            await File.WriteAllTextAsync(CredentialsPath, root.ToJsonString(new() { WriteIndented = true }), ct);
+            // 他のキーは保持したまま書き戻す。
+            // 【v1.5.0】書き込み途中のクラッシュで認証ファイルが破損しないよう、
+            // 一時ファイルへ書き込んでから原子(アトミック)リネームで差し替える。
+            await WriteAtomicAsync(CredentialsPath, root.ToJsonString(new() { WriteIndented = true }), ct);
 
             NeedsReLogin = false;
             LastError = null;
@@ -196,6 +198,24 @@ public sealed class CredentialStore
         {
             LastError = $"トークン更新エラー: {ex.Message}";
             return null;
+        }
+    }
+
+    private static async Task WriteAtomicAsync(string path, string content, CancellationToken ct)
+    {
+        // 同一ディレクトリ内の一時ファイルへ書いてから File.Move(overwrite) で差し替える。
+        // 失敗時は一時ファイルを残さないよう後始末する。
+        string dir = Path.GetDirectoryName(path)!;
+        string tmp = path + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tmp, content, ct);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 無視 */ }
+            throw;
         }
     }
 
