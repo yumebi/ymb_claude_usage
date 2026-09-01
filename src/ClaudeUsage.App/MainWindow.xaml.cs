@@ -39,10 +39,13 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // プロバイダー構築: Claude は常時、それ以外は providers.json から
+        // プロバイダー構築: Claude は常時、Grok は ~/.grok/logs/unified.jsonl がある時だけ、
+        // それ以外は providers.json から
         _history.Load();
         _claude = new ClaudeProvider(_http, () => _settings.RefreshMinutes, _history);
         _providers.Add(_claude);
+        if (GrokLocalScanner.IsAvailable)
+            _providers.Add(new GrokProvider());
         _providers.AddRange(GenericRestProvider.LoadAll(_http));
         foreach (var p in _providers)
             _panels.Add(new ProviderPanelVM(p.Name));

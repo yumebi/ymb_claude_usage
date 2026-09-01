@@ -2,6 +2,8 @@
 
 Claude Code の使用量(5時間セッション制限・週間制限・モデル別トークン消費)を
 常時デスクトップに表示する Windows 常駐ウィジェット。C# + WPF製。
+`~/.grok/` が存在する環境(Grok Build CLI利用者)では、Grokのローカルログ集計も
+同じウィジェット内にタブとして追加表示される。
 
 ![スクリーンショット](docs/screenshot.png)
 
@@ -24,6 +26,10 @@ Claude Code の使用量(5時間セッション制限・週間制限・モデル
 - **自動更新**: ローカル集計は1分ごと、APIは既定5分間隔(設定で変更可)。トレイメニューまたは
   ヘッダーの🔄ボタンで即時更新も可能。
 - **単一インスタンス**: Mutexにより多重起動を防止。
+- **Grok(Grok Build CLI)対応**: `~/.grok/logs/unified.jsonl` が存在する環境では、Claudeタブに
+  加えてGrokタブが自動で表示される(存在しなければ従来どおりClaude単独表示)。モデル別の
+  今日/7日間トークン消費に加え、画像生成の残数を表示する
+  (`Services/GrokLocalScanner.cs`、`Services/Providers/GrokProvider.cs`)。
 
 ## データ源(2系統)
 
@@ -33,6 +39,25 @@ Claude Code の使用量(5時間セッション制限・週間制限・モデル
 2. **ローカルJSONL集計**(`~/.claude/projects/**/*.jsonl`)
    Claude Codeが実行時に書き出すログを直接走査し、モデル別の入力/出力/キャッシュ読取トークン数を
    自前で積算する。API側にモデル別内訳が出ない場合でも、こちらで実際の使用傾向を確認できる。
+
+## Grokのローカルログ集計
+
+Grok Build CLI(`~/.grok/`)は、Claude Codeと違い**利用制限(%)を返す公開APIが無い**
+(SuperGrok定額契約向けのManagement APIは存在しない)ため、Grok側はAPI連携を持たず
+ローカルログ集計のみで表示する。
+
+- **走査対象**: `~/.grok/logs/unified.jsonl`(統合ログ)を1ファイルとして走査。
+  `ctx.completion_tokens` を持つ行(推論完了イベント)からモデル別の
+  入力(`prompt_tokens`)/出力(`completion_tokens`+`reasoning_tokens`)/
+  キャッシュ読取(`cached_prompt_tokens`)を集計する。
+- **モデル名の解決**: 同じログ内の `"model changed"` イベント(`ctx.model` + `sid`)から
+  セッションID→モデル名を対応付ける。これで解決できないセッションのみ
+  `~/.grok/sessions/*/<sid>/chat_history.jsonl` の `model_id` にフォールバックし、
+  それでも不明な場合は `Grok` とだけ表示する。
+- **画像生成の残数**: `ctx.images_remaining` の最新値をゲージとして表示する
+  (上限が不明なため%表示はできず、残数のみのテキスト表示)。
+- **触れないもの**: `~/.grok/auth.json`(認証情報)は一切読み書きしない。xAIのAPIエンドポイントへも
+  アクセスしない。
 
 ## 認証の仕組み
 
@@ -84,6 +109,8 @@ dotnet run
   (ウィンドウ位置、常に最前面、デスクトップピン留め、API更新間隔、不透明度、表示モード)
 - 認証情報: `~/.claude/.credentials.json`(Claude Code CLIと共用、本アプリは読み書きのみ行い
   新規作成はしない)
+- Grokログ: `~/.grok/logs/unified.jsonl`、`~/.grok/sessions/**/chat_history.jsonl`
+  (いずれも読み取り専用。`~/.grok/auth.json` は読まない)
 
 ## ダウンロード
 
