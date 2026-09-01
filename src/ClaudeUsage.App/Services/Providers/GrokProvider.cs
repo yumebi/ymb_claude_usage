@@ -39,13 +39,17 @@ public sealed class GrokProvider : IUsageProvider
             })
             .ToList();
 
+        string? error = local.BalanceExhaustedAt is { } exhaustedAt
+            ? $"Grok Build: 残高切れ ({exhaustedAt.ToLocalTime():M/d H:mm} 以降)"
+            : null;
+
         return new ProviderPanelData(
             gauges,
             "トークン使用量(ローカル集計)",
             "モデル", "今日", "7日間",
             rows,
             "直近7日間の記録なし",
-            null);
+            error);
     }
 
     private static string PrettyModelName(string model)

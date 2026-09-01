@@ -4,10 +4,15 @@ using System.Text.Json;
 namespace ClaudeUsage.App.Services;
 
 /// <summary>今日/過去7日間のモデル別集計結果 + 直近の画像生成残数(Grok版)。</summary>
+/// <param name="BalanceExhaustedAt">
+/// 現在 Grok Build の利用残高が切れている場合、その402エラーが発生した日時(UTC)。
+/// 切れていない(=それ以降に推論成功が記録されている、または402記録が無い)場合は null。
+/// </param>
 public sealed record GrokUsage(
     IReadOnlyDictionary<string, ModelTotals> Today,
     IReadOnlyDictionary<string, ModelTotals> Week,
-    long? ImagesRemaining);
+    long? ImagesRemaining,
+    DateTimeOffset? BalanceExhaustedAt);
 
 /// <summary>
 /// ~/.grok/logs/unified.jsonl(Grok Build CLIの統合ログ)を走査して
@@ -38,7 +43,9 @@ public sealed class GrokLocalScanner
         DateTime LastWriteUtc,
         long Length,
         Dictionary<DateOnly, Dictionary<string, ModelTotals>> DailyTotals,
-        long? ImagesRemaining);
+        long? ImagesRemaining,
+        DateTimeOffset? LastSuccessTs,
+        DateTimeOffset? LastExhaustedTs);
 
     private FileCache? _cache;
 
@@ -64,13 +71,18 @@ public sealed class GrokLocalScanner
 
         var path = UnifiedLogPath;
         if (!File.Exists(path))
-            return new GrokUsage(today, week, null);
+            return new GrokUsage(today, week, null, null);
 
         FileInfo info;
-        try { info = new FileInfo(path); } catch { return new GrokUsage(today, week, null); }
+        try { info = new FileInfo(path); } catch { return new GrokUsage(today, week, null, null); }
 
         if (_cache is null || _cache.LastWriteUtc != info.LastWriteTimeUtc || _cache.Length != info.Length)
-            _cache = new FileCache(info.LastWriteTimeUtc, info.Length, ParseDaily(path, weekStart), ParseImagesRemaining(path));
+        {
+            var parsed = ParseDaily(path, weekStart);
+            _cache = new FileCache(
+                info.LastWriteTimeUtc, info.Length, parsed.Daily, ParseImagesRemaining(path),
+                parsed.LastSuccessTs, parsed.LastExhaustedTs);
+        }
 
         foreach (var (date, models) in _cache.DailyTotals)
         {
@@ -85,7 +97,15 @@ public sealed class GrokLocalScanner
             }
         }
 
-        return new GrokUsage(today, week, _cache.ImagesRemaining);
+        // 残高切れ(402)が最後の推論成功より新しければ「現在残高切れ」と判定する。
+        // 次に成功すればそちらのtsの方が新しくなるので自動的に false に戻る。
+        DateTimeOffset? balanceExhaustedAt =
+            _cache.LastExhaustedTs is { } exhaustedTs &&
+            (_cache.LastSuccessTs is null || exhaustedTs > _cache.LastSuccessTs)
+                ? exhaustedTs
+                : null;
+
+        return new GrokUsage(today, week, _cache.ImagesRemaining, balanceExhaustedAt);
     }
 
     private static void AddInto(Dictionary<string, ModelTotals> map, string model, ModelTotals src)
@@ -102,15 +122,23 @@ public sealed class GrokLocalScanner
     private sealed record TokenRecord(
         DateOnly Date, string Sid, long Prompt, long Completion, long CachedPrompt, long Reasoning);
 
+    private sealed record ParseResult(
+        Dictionary<DateOnly, Dictionary<string, ModelTotals>> Daily,
+        DateTimeOffset? LastSuccessTs,
+        DateTimeOffset? LastExhaustedTs);
+
     /// <summary>
-    /// unified.jsonl を1回読み、(1) sid→model マップと (2) トークン使用量レコード一覧を作った上で
+    /// unified.jsonl を1回読み、(1) sid→model マップ、(2) トークン使用量レコード一覧、
+    /// (3) 最後の推論成功時刻、(4) 最後の残高切れ(402)時刻を作った上で
     /// 日付×モデル別の集計済み値に畳み込む。生の Entry リストは戻り値には残さない。
+    /// (3)(4)はファイル全体(週次フィルタの対象外)から求める。ファイルは1回しか読まない。
     /// </summary>
-    private static Dictionary<DateOnly, Dictionary<string, ModelTotals>> ParseDaily(
-        string path, DateTimeOffset weekStart)
+    private static ParseResult ParseDaily(string path, DateTimeOffset weekStart)
     {
         var sidToModel = new Dictionary<string, string>(StringComparer.Ordinal);
         var records = new List<TokenRecord>();
+        DateTimeOffset? lastSuccessTs = null;
+        DateTimeOffset? lastExhaustedTs = null;
 
         try
         {
@@ -142,6 +170,32 @@ public sealed class GrokLocalScanner
                     continue;
                 }
 
+                // 残高切れ(402)行: msg は shell.turn.inference_failed / turn.terminal_failure の
+                // 両方があり得るため msg では絞らず、status_code と message で判定する
+                if (line.Contains("usage balance exhausted", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("ts", out var tsEl) &&
+                            DateTimeOffset.TryParse(tsEl.GetString(), out var ts) &&
+                            root.TryGetProperty("ctx", out var ctx) &&
+                            ctx.ValueKind == JsonValueKind.Object &&
+                            ctx.TryGetProperty("status_code", out var codeEl) &&
+                            codeEl.ValueKind == JsonValueKind.Number &&
+                            codeEl.GetInt32() == 402 &&
+                            ctx.TryGetProperty("message", out var msgEl) &&
+                            (msgEl.GetString() ?? "").Contains("usage balance exhausted", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (lastExhaustedTs is null || ts > lastExhaustedTs)
+                                lastExhaustedTs = ts;
+                        }
+                    }
+                    catch (JsonException) { }
+                    continue;
+                }
+
                 if (!line.Contains("\"completion_tokens\"", StringComparison.Ordinal))
                     continue;
 
@@ -151,8 +205,13 @@ public sealed class GrokLocalScanner
                     var root = doc.RootElement;
 
                     if (!root.TryGetProperty("ts", out var tsEl) ||
-                        !DateTimeOffset.TryParse(tsEl.GetString(), out var ts) ||
-                        ts < weekStart)
+                        !DateTimeOffset.TryParse(tsEl.GetString(), out var ts))
+                        continue;
+
+                    if (lastSuccessTs is null || ts > lastSuccessTs)
+                        lastSuccessTs = ts;
+
+                    if (ts < weekStart)
                         continue;
 
                     if (!root.TryGetProperty("ctx", out var ctx) || ctx.ValueKind != JsonValueKind.Object)
@@ -179,7 +238,7 @@ public sealed class GrokLocalScanner
         catch
         {
             // ロック中・削除済みファイルは無視
-            return new Dictionary<DateOnly, Dictionary<string, ModelTotals>>();
+            return new ParseResult(new Dictionary<DateOnly, Dictionary<string, ModelTotals>>(), null, null);
         }
 
         // ファイル内で解決できなかった sid は sessions/*/<sid>/chat_history.jsonl にフォールバック
@@ -212,7 +271,7 @@ public sealed class GrokLocalScanner
             t.CacheRead += r.CachedPrompt;
             t.Requests++;
         }
-        return result;
+        return new ParseResult(result, lastSuccessTs, lastExhaustedTs);
     }
 
     /// <summary>

@@ -125,6 +125,13 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"更新 {DateTime.Now:HH:mm:ss}";
         }
+        catch (Exception ex)
+        {
+            // ここに来るのは各プロバイダーの個別ガードを抜けた異常(ApplyData中の例外等)。
+            // fire-and-forget 呼び出し(`_ = RefreshAsync(...)`)なので握り潰すと
+            // 「読込中...」のまま無言で固まって見えるため、必ず可視化する。
+            StatusText.Text = $"更新失敗 {DateTime.Now:HH:mm:ss} ({ex.Message})";
+        }
         finally
         {
             _refreshing = false;
@@ -210,8 +217,10 @@ public partial class MainWindow : Window
             else
             {
                 // %化できない値はテキストのみ(バー・リセット行なし)
+                // リソースキー欠落でリフレッシュ全体を落とさないよう TryFindResource + フォールバックにする
+                var fg = (Brush?)TryFindResource("YmbFgBrush") ?? Brushes.White;
                 buckets.Add(new BucketRowVM(g.Label, g.ValueText,
-                    (Brush)FindResource("Fg"), Brushes.Transparent,
+                    fg, Brushes.Transparent,
                     0, Visibility.Collapsed, "", Visibility.Collapsed));
             }
         }
@@ -432,14 +441,15 @@ public sealed class ProviderPanelVM : INotifyPropertyChanged
     public Visibility ErrorVisibility =>
         string.IsNullOrEmpty(Error) ? Visibility.Collapsed : Visibility.Visible;
 
-    /// <summary>再ログインが必要なエラーは通常の警告色より目立つ色にする。</summary>
-    public Brush ErrorBrush => IsReLoginError
+    /// <summary>再ログインが必要なエラーや残高切れは通常の警告色より目立つ色にする。</summary>
+    public Brush ErrorBrush => IsHighEmphasisError
         ? new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50))
         : new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x00));
 
-    public FontWeight ErrorFontWeight => IsReLoginError ? FontWeights.Bold : FontWeights.Normal;
+    public FontWeight ErrorFontWeight => IsHighEmphasisError ? FontWeights.Bold : FontWeights.Normal;
 
-    private bool IsReLoginError => !string.IsNullOrEmpty(Error) && Error.Contains("再ログイン", StringComparison.Ordinal);
+    private bool IsHighEmphasisError => !string.IsNullOrEmpty(Error) &&
+        (Error.Contains("再ログイン", StringComparison.Ordinal) || Error.Contains("残高切れ", StringComparison.Ordinal));
 
     public Visibility TableVisibility =>
         TableTitle is not null || TableRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
