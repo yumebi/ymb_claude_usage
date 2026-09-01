@@ -8,7 +8,14 @@ namespace ClaudeUsage.App.Services.Providers;
 /// </summary>
 public sealed class GrokProvider : IUsageProvider
 {
+    /// <summary>SuperGrokの週間枠の周期。</summary>
+    private static readonly TimeSpan WeeklyCycle = TimeSpan.FromDays(7);
+
     private readonly GrokLocalScanner _scanner = new();
+    private readonly Func<DateTimeOffset?> _weeklyResetAnchor;
+
+    public GrokProvider(Func<DateTimeOffset?> weeklyResetAnchor) =>
+        _weeklyResetAnchor = weeklyResetAnchor;
 
     public string Name => "Grok";
 
@@ -18,6 +25,9 @@ public sealed class GrokProvider : IUsageProvider
         var local = await Task.Run(() => _scanner.Scan(), ct);
 
         var gauges = new List<GaugeRow>();
+        // 残高切れのときに一番知りたいのは「いつ戻るか」なので先頭に置く
+        if (NextWeeklyReset(_weeklyResetAnchor()) is { } nextReset)
+            gauges.Add(new GaugeRow("週間リセット(推定)", FormatReset(nextReset), null, null));
         if (local.ImagesRemaining is { } images)
             gauges.Add(new GaugeRow("画像生成の残り", $"{images:N0}", null, null));
 
@@ -50,6 +60,38 @@ public sealed class GrokProvider : IUsageProvider
             rows,
             "直近7日間の記録なし",
             error);
+    }
+
+    /// <summary>
+    /// 基準点から7日周期で、今より後にくる直近のリセット時刻を求める。
+    /// 基準点が未設定なら null(リセット行を出さない)。
+    /// </summary>
+    private static DateTimeOffset? NextWeeklyReset(DateTimeOffset? anchor)
+    {
+        if (anchor is not { } a)
+            return null;
+
+        var now = DateTimeOffset.Now;
+        if (a > now)
+            return a;
+
+        // 経過した周期数+1 を足せば、必ず「今より後の最初のリセット」になる
+        var cycles = (long)Math.Floor((now - a) / WeeklyCycle) + 1;
+        return a + TimeSpan.FromTicks(WeeklyCycle.Ticks * cycles);
+    }
+
+    private static string FormatReset(DateTimeOffset resetsAt)
+    {
+        var local = resetsAt.ToLocalTime();
+        var remain = local - DateTimeOffset.Now;
+        if (remain < TimeSpan.Zero)
+            remain = TimeSpan.Zero;
+        var remainText = remain.TotalDays >= 1
+            ? $"あと{(int)remain.TotalDays}日{remain.Hours}時間"
+            : remain.TotalHours >= 1
+                ? $"あと{(int)remain.TotalHours}時間{remain.Minutes}分"
+                : $"あと{remain.Minutes}分";
+        return $"{local:M/d(ddd) H:mm} ({remainText})";
     }
 
     private static string PrettyModelName(string model)

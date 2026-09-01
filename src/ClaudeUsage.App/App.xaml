@@ -23,6 +23,23 @@
             <!-- 使用量バーの地。このアプリ固有。 -->
             <SolidColorBrush x:Key="BarBack" Color="#3A3A4A" />
 
+            <!-- 暗黙の TextBlock スタイル(このアプリでの上書き)。
+                 共通側(Themes/YmbTheme.xaml)の実装は意図的に Foreground を
+                 指定していない(ComboBoxのドロップダウン等、地が明るいままの
+                 ポップアップに明色文字が波及して読めなくなるのを避けるため)。
+                 このアプリはダーク固定で ComboBox 等の明るいポップアップを
+                 一切使わず、ToolTip も共通側の暗黙スタイル(Background=
+                 YmbSurfaceBrush / Foreground=YmbFgBrush、YmbTheme.xaml側で
+                 定義済み)で既にダーク化されているため、ここで前景色を固定
+                 しても波及先で白地に白文字になる懸念はない。
+                 MainWindowのテーブル値セル等、Foreground未指定のTextBlockが
+                 既定の黒文字になってしまう問題を解消する。 -->
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource YmbFontFamily}" />
+                <Setter Property="FontSize" Value="{StaticResource YmbFontSizeBase}" />
+                <Setter Property="Foreground" Value="{DynamicResource YmbFgBrush}" />
+            </Style>
+
             <!-- 複数プロバイダー表示用のダークタブ -->
             <Style x:Key="DarkTabControl" TargetType="TabControl">
                 <Setter Property="Background" Value="Transparent" />

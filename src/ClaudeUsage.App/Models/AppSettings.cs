@@ -39,6 +39,15 @@ public sealed class AppSettings
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DisplayMode DisplayMode { get; set; } = DisplayMode.Tabs;
 
+    /// <summary>
+    /// SuperGrokの週間枠がリセットされる時刻の基準点。
+    /// grok.com の使用量画面に出る「◯年◯月◯日 ◯:◯ にリセット」を1度だけ書けば、
+    /// 以後は7日周期で次回リセットを計算し続けるので再入力は要らない。
+    /// 週間枠の使用率(%)を返す公開APIが無いためリセット時刻だけの推定表示になる。
+    /// 未設定(null)ならGrokパネルにリセット行を出さない。
+    /// </summary>
+    public DateTimeOffset? GrokWeeklyResetAnchor { get; set; }
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YmbClaudeUsage");

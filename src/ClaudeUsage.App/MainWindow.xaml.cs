@@ -45,7 +45,7 @@ public partial class MainWindow : Window
         _claude = new ClaudeProvider(_http, () => _settings.RefreshMinutes, _history);
         _providers.Add(_claude);
         if (GrokLocalScanner.IsAvailable)
-            _providers.Add(new GrokProvider());
+            _providers.Add(new GrokProvider(() => _settings.GrokWeeklyResetAnchor));
         _providers.AddRange(GenericRestProvider.LoadAll(_http));
         foreach (var p in _providers)
             _panels.Add(new ProviderPanelVM(p.Name));
