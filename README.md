@@ -54,8 +54,10 @@ Grok Build CLI(`~/.grok/`)は、Claude Codeと違い**利用制限(%)を返す�
   セッションID→モデル名を対応付ける。これで解決できないセッションのみ
   `~/.grok/sessions/*/<sid>/chat_history.jsonl` の `model_id` にフォールバックし、
   それでも不明な場合は `Grok` とだけ表示する。
-- **画像生成の残数**: `ctx.images_remaining` の最新値をゲージとして表示する
-  (上限が不明なため%表示はできず、残数のみのテキスト表示)。
+- **コンテキスト内の画像数**: `shell.image_budget` イベントの `ctx.images_remaining` の最新値を
+  テキスト表示する。名前に反して「あと何枚生成できるか」ではなく、会話コンテキストに載っている
+  画像の枚数(同イベントの `inline_images` と常に同値で、使うほど増える。多くなると
+  `needs_image_compaction` が立つ)。週間クォータの残数ではない。
 - **残高切れの自動検知**: 同じ走査の中で、最後に推論が成功した時刻(`msg: shell.turn.inference_done`)と
   最後に402(`ctx.status_code == 402` かつ `ctx.message` に `usage balance exhausted` を含む)が
   発生した時刻を比較し、402の方が新しければ「現在残高切れ」と判定してエラー表示

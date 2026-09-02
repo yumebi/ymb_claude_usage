@@ -3,8 +3,8 @@ namespace ClaudeUsage.App.Services.Providers;
 /// <summary>
 /// Grok Build CLI(~/.grok/)のローカルログ集計を1プロバイダーとしてまとめたもの。
 /// ネットワークアクセス・認証は一切行わない(~/.grok/auth.json は読まない)。
-/// SuperGrok定額の利用制限(%)を返す公開APIが無いため、ゲージは画像生成の残数のみを
-/// パーセントなしのテキスト表示で出す。
+/// SuperGrok定額の利用制限(%)を返す公開APIが無いため、ゲージはパーセントなしの
+/// テキスト表示(週間リセットの推定・コンテキスト内の画像数)のみを出す。
 /// </summary>
 public sealed class GrokProvider : IUsageProvider
 {
@@ -28,8 +28,11 @@ public sealed class GrokProvider : IUsageProvider
         // 残高切れのときに一番知りたいのは「いつ戻るか」なので先頭に置く
         if (NextWeeklyReset(_weeklyResetAnchor()) is { } nextReset)
             gauges.Add(new GaugeRow("週間リセット(推定)", FormatReset(nextReset), null, null));
+        // images_remaining は「あと何枚生成できるか」ではなく、会話コンテキストに
+        // 載っている画像の枚数(shell.image_budget イベント。inline_images と常に同値で、
+        // 使うほど増える)。クォータの残数ではないので、そう読めない名前にしておく。
         if (local.ImagesRemaining is { } images)
-            gauges.Add(new GaugeRow("画像生成の残り", $"{images:N0}", null, null));
+            gauges.Add(new GaugeRow("コンテキスト内の画像数", $"{images:N0}", null, null));
 
         var rows = local.Week
             .OrderByDescending(kv => kv.Value.Input + kv.Value.Output)
