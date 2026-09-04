@@ -24,9 +24,10 @@ public sealed class GrokProvider : IUsageProvider
         // ローカル走査のみ(軽い。ファイルキャッシュあり)なので force に関わらず毎回行う
         var local = await Task.Run(() => _scanner.Scan(), ct);
 
+        var anchor = _weeklyResetAnchor();
         var gauges = new List<GaugeRow>();
         // 残高切れのときに一番知りたいのは「いつ戻るか」なので先頭に置く
-        if (NextWeeklyReset(_weeklyResetAnchor()) is { } nextReset)
+        if (NextWeeklyReset(anchor) is { } nextReset)
             gauges.Add(new GaugeRow("週間リセット(推定)", FormatReset(nextReset), null, null));
         // images_remaining は「あと何枚生成できるか」ではなく、会話コンテキストに
         // 載っている画像の枚数(shell.image_budget イベント。inline_images と常に同値で、
@@ -52,7 +53,10 @@ public sealed class GrokProvider : IUsageProvider
             })
             .ToList();
 
-        string? error = local.BalanceExhaustedAt is { } exhaustedAt
+        // 残高切れの解除は本来「次に推論が成功したら」だが、それだとリセット後に一度も
+        // Grokを使っていない間ずっと「残高切れ」と出したままになる(実際はもう使える)。
+        // 推定リセット時刻が分かっているなら、402より後にリセット境界を跨いだ時点で解除する。
+        string? error = local.BalanceExhaustedAt is { } exhaustedAt && !HasResetSince(exhaustedAt, anchor)
             ? $"Grok Build: 残高切れ ({exhaustedAt.ToLocalTime():M/d H:mm} 以降)"
             : null;
 
@@ -81,6 +85,20 @@ public sealed class GrokProvider : IUsageProvider
         // 経過した周期数+1 を足せば、必ず「今より後の最初のリセット」になる
         var cycles = (long)Math.Floor((now - a) / WeeklyCycle) + 1;
         return a + TimeSpan.FromTicks(WeeklyCycle.Ticks * cycles);
+    }
+
+    /// <summary>
+    /// 指定時刻より後に週間リセットの境界を跨いだか。基準点が未設定なら判定できないので false
+    /// (その場合は従来どおり、次に推論が成功するまで残高切れ表示のままになる)。
+    /// </summary>
+    private static bool HasResetSince(DateTimeOffset since, DateTimeOffset? anchor)
+    {
+        if (NextWeeklyReset(anchor) is not { } next)
+            return false;
+
+        // 直近に過ぎたリセット境界 = 次回リセットの1周期前
+        var lastReset = next - WeeklyCycle;
+        return since < lastReset;
     }
 
     private static string FormatReset(DateTimeOffset resetsAt)
