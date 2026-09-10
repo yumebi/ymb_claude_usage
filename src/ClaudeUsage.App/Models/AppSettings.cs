@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace ClaudeUsage.App.Models;
 
@@ -48,6 +49,13 @@ public sealed class AppSettings
     /// </summary>
     public DateTimeOffset? GrokWeeklyResetAnchor { get; set; }
 
+    /// <summary>
+    /// 直近の <see cref="Load"/> が(リトライしても)失敗し、初期値インスタンスを返した理由。
+    /// 成功時・ファイル未作成(初回起動)時は null。設定ファイルには保存しない。
+    /// </summary>
+    [JsonIgnore]
+    public string? LoadError { get; private set; }
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YmbClaudeUsage");
@@ -56,18 +64,41 @@ public sealed class AppSettings
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    /// <summary>読み取り・解析失敗時のリトライ回数。</summary>
+    private const int MaxLoadAttempts = 3;
+
+    /// <summary>リトライ間の待機時間。起動時の合計待ちが0.5秒程度に収まるよう短めにする。</summary>
+    private static readonly TimeSpan LoadRetryDelay = TimeSpan.FromMilliseconds(200);
+
     public static AppSettings Load()
     {
-        try
+        // ファイル未作成は異常ではない(初回起動)。初期値をLoadError無しで返す
+        if (!File.Exists(FilePath))
+            return new AppSettings();
+
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= MaxLoadAttempts; attempt++)
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            try
+            {
+                var json = File.ReadAllText(FilePath);
+                var settings = JsonSerializer.Deserialize<AppSettings>(json);
+                if (settings is not null)
+                    return settings;
+                lastError = new InvalidDataException("設定ファイルの内容を復元できませんでした");
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            // 一過性のロック等を想定し、最後の試行以外は短く待って再試行する
+            if (attempt < MaxLoadAttempts)
+                Thread.Sleep(LoadRetryDelay);
         }
-        catch
-        {
-            // 壊れた設定ファイルは初期値で作り直す
-        }
-        return new AppSettings();
+
+        // 数回リトライしても失敗した場合のみ、理由付きの初期値インスタンスを返す
+        return new AppSettings { LoadError = lastError?.Message ?? "不明なエラー" };
     }
 
     public void Save()

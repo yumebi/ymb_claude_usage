@@ -16,7 +16,7 @@ namespace ClaudeUsage.App;
 
 public partial class MainWindow : Window
 {
-    private readonly AppSettings _settings = AppSettings.Load();
+    private AppSettings _settings = AppSettings.Load();
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMinutes(1) };
 
@@ -97,6 +97,23 @@ public partial class MainWindow : Window
         _refreshing = true;
         try
         {
+            // 起動時の設定読み込みが一過性に失敗していた場合のみ、ここで再読み込みを試みる。
+            // 成功したら以後は各プロバイダーのラムダ(例: () => _settings.GrokWeeklyResetAnchor)が
+            // 自動的に新しい値を参照するようになる(フィールド差し替えだけで済み、作り直し不要)。
+            if (_settings.LoadError is not null)
+            {
+                var reloaded = AppSettings.Load();
+                if (reloaded.LoadError is null)
+                {
+                    var previousDisplayMode = _settings.DisplayMode;
+                    _settings = reloaded;
+                    Topmost = _settings.AlwaysOnTop && !_settings.DesktopPin;
+                    Opacity = Math.Clamp(_settings.Opacity, 0.3, 1.0);
+                    if (_settings.DisplayMode != previousDisplayMode)
+                        BuildLayout();
+                }
+            }
+
             // 全プロバイダー並列取得。1つの失敗が他に波及しないよう個別にガード
             var tasks = _providers.Select(async p =>
             {
@@ -123,7 +140,9 @@ public partial class MainWindow : Window
             // 次回リセット時刻を控え直す
             _bells.UpdateSchedule(_claude.Buckets);
 
-            StatusText.Text = $"更新 {DateTime.Now:HH:mm:ss}";
+            StatusText.Text = _settings.LoadError is null
+                ? $"更新 {DateTime.Now:HH:mm:ss}"
+                : $"更新 {DateTime.Now:HH:mm:ss}(設定読込失敗: {_settings.LoadError})";
         }
         catch (Exception ex)
         {
