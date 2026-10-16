@@ -23,7 +23,13 @@ public partial class App : Application
 
     private static readonly int WM_TRAYICON = TrayInterop.WM_APP + 1;
 
+    // 保存先を環境変数で切り替えている場合(動作確認用)は、本番の起動と二重起動扱いにならないよう名前を分ける。
+    private static readonly string InstanceSuffix = DataDirSuffix();
+    private static readonly string MutexName = "YmbClaudeUsage_SingleInstance" + InstanceSuffix;
+    private static readonly string ActivateEventName = "YmbClaudeUsage_Activate" + InstanceSuffix;
+
     private static Mutex? _instanceMutex;
+    private EventWaitHandle? _activateEvent;
 
     private MainWindow? _window;
     private HwndSource? _hwndSource;
@@ -36,9 +42,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        _instanceMutex = new Mutex(true, "YmbClaudeUsage_SingleInstance", out var createdNew);
+        _instanceMutex = new Mutex(true, MutexName, out var createdNew);
         if (!createdNew)
         {
+            // 先に起動している本体へ「表示して」と知らせてから終了する(以前は何も起きずに終わっていた)。
+            SignalFirstInstance();
             Shutdown();
             return;
         }
@@ -49,6 +57,94 @@ public partial class App : Application
         SetupTrayIcon();
         _window.UtilizationChanged += OnUtilizationChanged;
         _window.Show();
+        StartActivationListener();
+    }
+
+    private static string DataDirSuffix()
+    {
+        var dir = Environment.GetEnvironmentVariable(AppSettings.DataDirEnvVar);
+        if (string.IsNullOrWhiteSpace(dir)) return "";
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(dir.ToLowerInvariant()));
+        return "_" + Convert.ToHexString(hash)[..12];
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int dwProcessId);
+
+    private const int ASFW_ANY = -1;
+
+    /// <summary>2つ目の起動から「表示して」と通知を受ける待ち受けを始める。</summary>
+    private void StartActivationListener()
+    {
+        var activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        _activateEvent = activateEvent;
+        var thread = new Thread(() =>
+        {
+            while (true)
+            {
+                try
+                {
+                    activateEvent.WaitOne();
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                Dispatcher.BeginInvoke(BringWindowToFront);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "activate-listener",
+        };
+        thread.Start();
+    }
+
+    private static void SignalFirstInstance()
+    {
+        try
+        {
+            // 2つ目のプロセスはユーザー操作で起動された直後なので、前面化の権限を持っている。
+            // それを先に起動していた本体にも許可して、前面に出られるようにする。
+            AllowSetForegroundWindow(ASFW_ANY);
+            using var handle = EventWaitHandle.OpenExisting(ActivateEventName);
+            handle.Set();
+        }
+        catch (Exception e) when (e is WaitHandleCannotBeOpenedException or UnauthorizedAccessException)
+        {
+            // 通知の仕組みを持たない旧バージョンが動いている場合は、何もせず終了する。
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_SHOW = 5;
+
+    /// <summary>トレイに隠れていれば表示し、手前に出す。</summary>
+    private void BringWindowToFront()
+    {
+        if (_window is null) return;
+        if (!_window.IsVisible)
+        {
+            _window.Show();
+        }
+        else
+        {
+            // WPF上は表示中でも、外部から Win32 で隠されていると見えない。その場合は表示し直す。
+            var hwnd = new WindowInteropHelper(_window).Handle;
+            if (hwnd != IntPtr.Zero && !IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_SHOW);
+        }
+        _window.Activate();
+        // 他のアプリが前面にあるとActivateだけでは前に出ないことがある。Topmostを一瞬切り替えて確実に出す。
+        var topmost = _window.Topmost;
+        _window.Topmost = true;
+        _window.Topmost = topmost;
     }
 
     /// <summary>

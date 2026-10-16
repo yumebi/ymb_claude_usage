@@ -23,8 +23,12 @@ public sealed class CredentialStore
     /// </summary>
     private const long ReLoginThresholdMs = 30 * 60 * 1000;
 
+    // 開発・動作確認用: 環境変数で保存先を切り替えているときは、認証情報もそのフォルダを見る
+    // (実際の認証情報に触れず、トークンの更新も起きないようにするため)。
     private static string CredentialsPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+        Environment.GetEnvironmentVariable(ClaudeUsage.App.Models.AppSettings.DataDirEnvVar) is { Length: > 0 } overrideDir
+            ? Path.Combine(overrideDir, ".credentials.json")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
 
     private readonly HttpClient _http;
     private DateTimeOffset _refreshBackoffUntil = DateTimeOffset.MinValue;

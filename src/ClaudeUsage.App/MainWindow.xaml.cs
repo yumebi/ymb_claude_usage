@@ -70,6 +70,7 @@ public partial class MainWindow : Window
 
         Loaded += (_, _) =>
         {
+            EnsureOnScreen();   // デスクトップ固定の前に行う(固定すると座標の扱いが変わる)
             if (_settings.DesktopPin)
                 ApplyDesktopPin(true);
             RefreshNow();
@@ -79,6 +80,26 @@ public partial class MainWindow : Window
 
         _timer.Tick += (_, _) => _ = RefreshAsync(force: false);
         _timer.Start();
+    }
+
+    /// <summary>
+    /// 保存した位置が、モニタ構成の変化で画面外になっていたら、画面内に引き戻す。
+    /// 常に手前に出る小さなウィジェットが画面外に出ると、取り戻す手段がない。
+    /// 画面内に十分見えていれば(モニタをまたぐ配置を含めて)そのままにする。
+    /// </summary>
+    private void EnsureOnScreen()
+    {
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        var current = new PxRect(
+            (int)Math.Round(Left * scale), (int)Math.Round(Top * scale),
+            (int)Math.Round(ActualWidth * scale), (int)Math.Round(ActualHeight * scale));
+        if (current.Width <= 0 || current.Height <= 0) return;
+
+        var fitted = WindowPlacementMath.Fit(current, MonitorWorkAreas.Enumerate(), 0, 0);
+        if (fitted == current) return;
+
+        Left = fitted.X / scale;
+        Top = fitted.Y / scale;
     }
 
     /// <summary>リセット音の有無を切り替える。トレイメニューから呼ばれる。</summary>

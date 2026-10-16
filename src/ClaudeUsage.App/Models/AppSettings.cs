@@ -56,9 +56,15 @@ public sealed class AppSettings
     [JsonIgnore]
     public string? LoadError { get; private set; }
 
+    /// <summary>開発・動作確認用。設定すると、設定フォルダと認証情報の場所をこのフォルダに切り替える。</summary>
+    public const string DataDirEnvVar = "YMB_CLAUDEUSAGE_DATA_DIR";
+
+    // 実際の設定や認証情報に触れずに起動して確かめられるよう、環境変数で保存先を変えられる。
     [JsonIgnore]
     public static string Directory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YmbClaudeUsage");
+        Environment.GetEnvironmentVariable(DataDirEnvVar) is { Length: > 0 } overrideDir
+            ? overrideDir
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YmbClaudeUsage");
 
     private static string FilePath => Path.Combine(Directory, "settings.json");
 
