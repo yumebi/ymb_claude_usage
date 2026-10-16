@@ -36,6 +36,15 @@ public sealed class AppSettings
     /// <summary>セッション枠・週間枠のリセット時にベルを鳴らすか。</summary>
     public bool ResetBell { get; set; } = true;
 
+    /// <summary>使用率がしきい値を超えたときにバルーンで警告するか。</summary>
+    public bool UsageAlerts { get; set; } = true;
+
+    /// <summary>
+    /// 警告を出す使用率(%)。セッション枠(5時間)と週間枠のそれぞれが、各しきい値を超えた瞬間に1回通知する。
+    /// 設定ファイル(settings.json)で変更できる。100 は上限到達の通知。
+    /// </summary>
+    public List<int> AlertThresholds { get; set; } = [80, 95, 100];
+
     /// <summary>複数プロバイダー時のパネル配置(タブ/縦並び/横並び)。</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DisplayMode DisplayMode { get; set; } = DisplayMode.Tabs;

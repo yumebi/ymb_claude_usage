@@ -30,6 +30,19 @@ public partial class MainWindow : Window
     /// <summary>週間使用率(トレイアイコン色用)。Claude の全モデル週間バケットの値を通知する。</summary>
     public event Action<double>? UtilizationChanged;
 
+    /// <summary>セッション枠(5時間)・週間枠の使用率(警告の判定用)。更新のたびに枠ごとに通知する。</summary>
+    public event Action<string, double>? BucketUtilizationChanged;
+
+    /// <summary>警告を出すか(設定)。</summary>
+    public bool UsageAlertsEnabled => _settings.UsageAlerts;
+
+    /// <summary>警告を出す使用率(%)。</summary>
+    public IReadOnlyList<int> AlertThresholds => _settings.AlertThresholds;
+
+    // 直近に取得した結果。「あと◯分」を時間の経過に合わせて描き直すために保持する。
+    private ProviderPanelData[]? _lastResults;
+    private readonly DispatcherTimer _countdownTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+
     public bool IsTopmostEnabled => _settings.AlwaysOnTop;
     public bool IsDesktopPinEnabled => _settings.DesktopPin;
     public bool IsResetBellEnabled => _settings.ResetBell;
@@ -53,6 +66,10 @@ public partial class MainWindow : Window
         HeaderTitle.Text = _providers.Count == 1 ? "Claude Code 使用量" : "AI使用量モニター";
         VersionText.Text = AppVersionInfo.Display;
         BuildLayout();
+
+        // リセットまでの残り時間は、API の更新間隔(既定5分)を待たずに、時間とともに減って見えるようにする
+        _countdownTimer.Tick += (_, _) => RefreshCountdowns();
+        _countdownTimer.Start();
 
         Opacity = Math.Clamp(_settings.Opacity, 0.3, 1.0);
         if (!double.IsNaN(_settings.WindowLeft) && !double.IsNaN(_settings.WindowTop))
@@ -149,8 +166,16 @@ public partial class MainWindow : Window
             }).ToList();
             var results = await Task.WhenAll(tasks);
 
+            _lastResults = results;
             for (var i = 0; i < _panels.Count; i++)
                 ApplyData(_panels[i], results[i]);
+
+            // 枠ごとの使用率を警告の判定に渡す(通知の出し方は App 側)
+            foreach (var bucket in _claude.Buckets)
+            {
+                if (bucket.Key is ResetBellService.SessionKey or ResetBellService.WeeklyKey)
+                    BucketUtilizationChanged?.Invoke(bucket.Key, bucket.UtilizationPercent);
+            }
 
             if (_claude.WeeklyPercent is { } weekly)
             {
@@ -279,20 +304,17 @@ public partial class MainWindow : Window
         vm.SecondaryEmptyText = data.SecondaryEmptyText;
     }
 
-    private static string FormatReset(DateTimeOffset? resetsAt)
+    private static string FormatReset(DateTimeOffset? resetsAt) =>
+        ResetTextFormatter.Format(resetsAt, DateTimeOffset.Now);
+
+    /// <summary>直近の取得結果から画面を描き直し、リセットまでの残り時間を最新にする。</summary>
+    private void RefreshCountdowns()
     {
-        if (resetsAt is null)
-            return "";
-        var local = resetsAt.Value.ToLocalTime();
-        var remain = local - DateTimeOffset.Now;
-        if (remain < TimeSpan.Zero)
-            remain = TimeSpan.Zero;
-        var remainText = remain.TotalDays >= 1
-            ? $"あと{(int)remain.TotalDays}日{remain.Hours}時間"
-            : remain.TotalHours >= 1
-                ? $"あと{(int)remain.TotalHours}時間{remain.Minutes}分"
-                : $"あと{remain.Minutes}分";
-        return $"{local:M/d(ddd) HH:mm} リセット({remainText})";
+        // 隠れている(トレイ常駐中)間は描き直さない
+        if (!IsVisible || _lastResults is null || _refreshing)
+            return;
+        for (var i = 0; i < _panels.Count && i < _lastResults.Length; i++)
+            ApplyData(_panels[i], _lastResults[i]);
     }
 
     // ---- ウィンドウ操作 ----

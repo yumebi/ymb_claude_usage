@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using ClaudeUsage.App.Models;
 using ClaudeUsage.App.Native;
+using ClaudeUsage.App.Services;
 
 namespace ClaudeUsage.App;
 
@@ -38,7 +39,7 @@ public partial class App : Application
     private IntPtr _currentHIcon;
     private string _tooltipText = "YMB Claude使用量モニター";
     private double _lastPercent;
-    private double _alertedLevel = -1;
+    private UsageAlertTracker? _alertTracker;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -56,6 +57,8 @@ public partial class App : Application
         _window = new MainWindow();
         SetupTrayIcon();
         _window.UtilizationChanged += OnUtilizationChanged;
+        _alertTracker = new UsageAlertTracker(_window.AlertThresholds);
+        _window.BucketUtilizationChanged += OnBucketUtilization;
         _window.Show();
         StartActivationListener();
     }
@@ -147,38 +150,28 @@ public partial class App : Application
         _window.Topmost = topmost;
     }
 
+    /// <summary>週間使用率に応じてトレイアイコンの色を更新する。</summary>
+    private void OnUtilizationChanged(double percent) => UpdateTrayIcon(percent);
+
     /// <summary>
-    /// 使用率が上がって閾値(80/90/100%)を超えたらバルーンで通知する。
-    /// 下がりきったら(60%未満)再通知可能な状態に戻す。
+    /// セッション枠(5時間)・週間枠の使用率がしきい値(既定 80/95/100%)を超えた瞬間に、バルーンで1回通知する。
+    /// 十分下がったら(リセット後など)、次の上昇でまた通知できる状態に戻る。
     /// </summary>
-    private void OnUtilizationChanged(double percent)
+    private void OnBucketUtilization(string key, double percent)
     {
-        UpdateTrayIcon(percent);
-        CheckLimitApproach(percent);
-    }
-
-    private void CheckLimitApproach(double percent)
-    {
-        var level = percent >= 100 ? 100 : percent >= 90 ? 90 : percent >= 80 ? 80 : 0;
-        if (level == 0)
-        {
-            // 十分下がったら次の上昇でまた通知できるようにする
-            if (percent < 60)
-                _alertedLevel = -1;
+        if (_window is null || _alertTracker is null || !_window.UsageAlertsEnabled)
             return;
-        }
-
-        if (level <= _alertedLevel)
+        if (_alertTracker.Evaluate(key, percent) is not { } level)
             return;
 
-        _alertedLevel = level;
+        var name = key == ResetBellService.SessionKey ? "セッション枠(5時間)" : "週間枠";
         var (title, flags) = level switch
         {
-            100 => ("Claude 使用量リミット到達", TrayInterop.NIIF_ERROR),
-            90 => ("Claude 使用量リミット間近", TrayInterop.NIIF_WARNING),
+            >= 100 => ("Claude 使用量リミット到達", TrayInterop.NIIF_ERROR),
+            >= 90 => ("Claude 使用量リミット間近", TrayInterop.NIIF_WARNING),
             _ => ("Claude 使用量リミット接近", TrayInterop.NIIF_WARNING),
         };
-        ShowBalloon(title, $"週間使用率が {percent:0.#}% になりました。", flags);
+        ShowBalloon(title, $"{name}の使用率が {percent:0.#}% になりました。", flags);
     }
 
     /// <summary>トレイアイコンのバルーン通知を表示する。</summary>
