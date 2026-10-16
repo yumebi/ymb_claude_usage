@@ -17,6 +17,7 @@ public partial class App : Application
     private const int CmdTopmost = 1003;
     private const int CmdDesktopPin = 1004;
     private const int CmdResetBell = 1005;
+    private const int CmdResetPosition = 1006;
     private const int CmdModeTabs = 1010;
     private const int CmdModeVertical = 1011;
     private const int CmdModeHorizontal = 1012;
@@ -265,6 +266,9 @@ public partial class App : Application
             case CmdResetBell:
                 _window?.ToggleResetBell();
                 break;
+            case CmdResetPosition:
+                _window?.ResetPosition();
+                break;
             case CmdModeTabs:
                 _window?.SetDisplayMode(DisplayMode.Tabs);
                 break;
@@ -316,6 +320,7 @@ public partial class App : Application
             TrayInterop.AppendMenu(hSubMenu, TrayInterop.MF_STRING | (currentMode == DisplayMode.Vertical ? TrayInterop.MF_CHECKED : 0), (UIntPtr)CmdModeVertical, "縦並び");
             TrayInterop.AppendMenu(hSubMenu, TrayInterop.MF_STRING | (currentMode == DisplayMode.Horizontal ? TrayInterop.MF_CHECKED : 0), (UIntPtr)CmdModeHorizontal, "横並び");
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_POPUP, (UIntPtr)(ulong)hSubMenu.ToInt64(), "表示モード");
+            TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdResetPosition, "ウインドウ位置をリセット");
 
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_SEPARATOR, UIntPtr.Zero, null);
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdExit, "終了");

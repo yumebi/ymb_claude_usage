@@ -120,6 +120,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>リセット音の有無を切り替える。トレイメニューから呼ばれる。</summary>
+    /// <summary>
+    /// ウインドウを既定の位置(プライマリモニタの右上)に戻す。トレイのメニューから呼ばれる。
+    /// 位置の補正が効かない状況の最終手段。
+    /// </summary>
+    public void ResetPosition()
+    {
+        if (!IsVisible) Show();
+        var area = SystemParameters.WorkArea;
+        Left = area.Right - 320 - 20;
+        Top = area.Top + 20;
+        Activate();
+        SaveSettings();
+    }
+
     public void ToggleResetBell()
     {
         _settings.ResetBell = !_settings.ResetBell;
