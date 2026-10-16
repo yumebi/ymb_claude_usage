@@ -58,6 +58,8 @@ internal static class TrayInterop
     public const int WM_NULL = 0x0000;
     public const int WM_LBUTTONUP = 0x0202;
     public const int WM_LBUTTONDBLCLK = 0x0203;
+    /// <summary>吹き出し(バルーン)がクリックされた。</summary>
+    public const int NIN_BALLOONUSERCLICK = 0x0405;
     public const int WM_RBUTTONUP = 0x0205;
 
     public static readonly IntPtr HWND_MESSAGE = new(-3);

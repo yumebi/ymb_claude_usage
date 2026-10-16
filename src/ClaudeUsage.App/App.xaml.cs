@@ -18,6 +18,7 @@ public partial class App : Application
     private const int CmdDesktopPin = 1004;
     private const int CmdResetBell = 1005;
     private const int CmdResetPosition = 1006;
+    private const int CmdCheckUpdate = 1007;
     private const int CmdModeTabs = 1010;
     private const int CmdModeVertical = 1011;
     private const int CmdModeHorizontal = 1012;
@@ -62,6 +63,9 @@ public partial class App : Application
         _window.BucketUtilizationChanged += OnBucketUtilization;
         _window.Show();
         StartActivationListener();
+
+        // 起動時に、新しいバージョンがあるかを黙って確認する
+        _ = CheckForUpdateAsync(manual: false);
     }
 
     private static string DataDirSuffix()
@@ -175,11 +179,46 @@ public partial class App : Application
         ShowBalloon(title, $"{name}の使用率が {percent:0.#}% になりました。", flags);
     }
 
+    // 直近に出した吹き出しをクリックしたときに開くリンク(更新の案内のとき。使用率の警告などは null)。
+    private string? _balloonClickUrl;
+
+    private void OpenBalloonLink()
+    {
+        var url = _balloonClickUrl;
+        if (url is null || !GitHubRelease.IsAllowedUrl(url, UpdateCheckService.Repo))
+            return;
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// 新しいバージョンを確認して、あればトレイの吹き出しで知らせる(クリックでリリースページを開く)。
+    /// 起動時は黙って確認し(失敗や最新のときは何も出さない)、メニューからの手動確認では結果を必ず知らせる。
+    /// </summary>
+    private async Task CheckForUpdateAsync(bool manual)
+    {
+        var result = await UpdateCheckService.CheckAsync(AppVersionInfo.Display);
+        switch (result.Status)
+        {
+            case UpdateCheckStatus.UpdateAvailable:
+                ShowBalloon("YMB Claude使用量モニター",
+                    $"新しいバージョン v{result.LatestVersion} があります。クリックでダウンロードページを開きます。",
+                    TrayInterop.NIIF_INFO, result.ReleaseUrl);
+                break;
+            case UpdateCheckStatus.UpToDate when manual:
+                ShowBalloon("YMB Claude使用量モニター", $"最新のバージョンです({AppVersionInfo.Display})。", TrayInterop.NIIF_INFO);
+                break;
+            case UpdateCheckStatus.Failed when manual:
+                ShowBalloon("YMB Claude使用量モニター", "更新情報を取得できませんでした。ネット接続を確認してください。", TrayInterop.NIIF_WARNING);
+                break;
+        }
+    }
+
     /// <summary>トレイアイコンのバルーン通知を表示する。</summary>
-    private void ShowBalloon(string title, string message, uint infoFlags)
+    private void ShowBalloon(string title, string message, uint infoFlags, string? clickUrl = null)
     {
         if (_hwndSource is null)
             return;
+        _balloonClickUrl = clickUrl;
 
         var data = CreateNotifyIconData();
         data.uFlags = TrayInterop.NIF_INFO;
@@ -229,6 +268,10 @@ public partial class App : Application
                     ToggleWindow();
                     handled = true;
                     break;
+                case TrayInterop.NIN_BALLOONUSERCLICK:
+                    OpenBalloonLink();
+                    handled = true;
+                    break;
             }
         }
         else if (msg == TrayInterop.WM_COMMAND)
@@ -268,6 +311,9 @@ public partial class App : Application
                 break;
             case CmdResetPosition:
                 _window?.ResetPosition();
+                break;
+            case CmdCheckUpdate:
+                _ = CheckForUpdateAsync(manual: true);
                 break;
             case CmdModeTabs:
                 _window?.SetDisplayMode(DisplayMode.Tabs);
@@ -321,6 +367,10 @@ public partial class App : Application
             TrayInterop.AppendMenu(hSubMenu, TrayInterop.MF_STRING | (currentMode == DisplayMode.Horizontal ? TrayInterop.MF_CHECKED : 0), (UIntPtr)CmdModeHorizontal, "横並び");
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_POPUP, (UIntPtr)(ulong)hSubMenu.ToInt64(), "表示モード");
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdResetPosition, "ウインドウ位置をリセット");
+
+            // 並びはYMB共通: ... → 区切り → 更新を確認 → 区切り → 終了
+            TrayInterop.AppendMenu(hMenu, TrayInterop.MF_SEPARATOR, UIntPtr.Zero, null);
+            TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdCheckUpdate, "更新を確認");
 
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_SEPARATOR, UIntPtr.Zero, null);
             TrayInterop.AppendMenu(hMenu, TrayInterop.MF_STRING, (UIntPtr)CmdExit, "終了");

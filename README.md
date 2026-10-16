@@ -23,6 +23,9 @@ Claude Code の使用量(5時間セッション制限・週間制限・モデル
   超えた瞬間にバルーンで1回通知する(`Services/UsageAlertTracker.cs`)。リセットなどで十分下がれば
   (最小しきい値 − 20%)、次の上昇でまた通知する。しきい値は `settings.json` の
   `AlertThresholds`(例: `[70, 90]`)、通知そのものは `UsageAlerts`(`false` で無効)で変更できる。
+- **更新確認**: 起動時に、GitHub の最新リリース(公開済みのもの)を黙って確認し、新しいバージョンがあれば
+  トレイの吹き出しで知らせる(クリックでリリースページを開く)。トレイの「更新を確認」から手動でも確認でき、
+  その場合は「最新です」「確認できませんでした」も知らせる(`Services/UpdateCheckService.cs`)。
 - **ローカルJSONL集計**: `~/.claude/projects/**/*.jsonl` を走査し、モデル別(Sonnet/Opus/Fable/Haiku等)の
   今日・7日間のトークン消費量を集計・表示。ファイルのmtime+サイズによるキャッシュと、
   `message.id` + `requestId` による重複排除で高速かつ正確に集計する
