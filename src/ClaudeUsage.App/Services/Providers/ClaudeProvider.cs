@@ -52,9 +52,13 @@ public sealed class ClaudeProvider : IUsageProvider
         WeeklyPercent = (_buckets.FirstOrDefault(b => b.Key == "seven_day")
                       ?? _buckets.FirstOrDefault())?.UtilizationPercent;
 
-        var gauges = _buckets
-            .Select(b => new GaugeRow(b.Label, $"{b.UtilizationPercent:0.#}%", b.UtilizationPercent, b.ResetsAt))
-            .ToList();
+        // API失敗中は、デスクトップアプリが残した履歴からの概算に差し替える。
+        // それも取れなければ従来どおり直近のAPI値(古い可能性あり)を出す。
+        List<GaugeRow> gauges = _apiError is not null ? BuildFallbackGauges() : [];
+        if (gauges.Count == 0)
+            gauges = _buckets
+                .Select(b => new GaugeRow(b.Label, $"{b.UtilizationPercent:0.#}%", b.UtilizationPercent, b.ResetsAt))
+                .ToList();
 
         var rows = local.Week
             .OrderByDescending(kv => kv.Value.Input + kv.Value.Output)
@@ -114,6 +118,62 @@ public sealed class ClaudeProvider : IUsageProvider
             SecondaryRows = projectRows,
             SecondaryEmptyText = "直近7日間のプロジェクト記録なし",
         };
+    }
+
+    /// <summary>
+    /// OAuth使用量APIが使えない時の代替表示。デスクトップアプリの履歴ファイルにある最新サンプルから、
+    /// 5時間枠と週間(全モデル)の使用率を「概算」として出す。
+    /// 採取は数時間おきで古いことがあるので、値には採取時刻を添え、すでに枠が入れ替わっている値は出さない。
+    /// </summary>
+    private List<GaugeRow> BuildFallbackGauges()
+    {
+        var rows = new List<GaugeRow>();
+        var latest = DesktopPlanUsageReader.ReadLatest();
+        if (latest is null)
+            return rows;
+
+        var now = DateTimeOffset.Now;
+        var age = now - latest.SampledAt;
+        var at = latest.SampledAt.ToLocalTime();
+        var atText = $"{at:M/d H:mm}時点";
+
+        // 5時間枠: 採取から5時間以上経っていれば別の枠なので、古い値は出さない
+        if (age < TimeSpan.FromHours(5))
+        {
+            rows.Add(new GaugeRow("セッション (5時間・概算)",
+                $"{latest.FiveHourPercent:0.#}% ({atText})", latest.FiveHourPercent, null));
+        }
+
+        // 週間: 直近に取れたAPI値のリセット時刻があれば7日周期で先送りして次回を推定する。
+        // 採取がその直前のリセットより前なら、すでに週が入れ替わっているので出さない。
+        var nextReset = EstimateNextWeeklyReset(now);
+        var weekStillValid = nextReset is { } next
+            ? latest.SampledAt >= next - TimeSpan.FromDays(7)
+            : age < TimeSpan.FromDays(7);
+        if (weekStillValid)
+        {
+            rows.Add(new GaugeRow("週間 (全モデル・概算)",
+                $"{latest.WeeklyPercent:0.#}% ({atText})", latest.WeeklyPercent, nextReset));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// 直近に取れた週間枠のリセット時刻から、7日周期で今より後の最初のリセットを推定する。
+    /// 一度もAPIが成功していない(基準が無い)場合は null。
+    /// </summary>
+    private DateTimeOffset? EstimateNextWeeklyReset(DateTimeOffset now)
+    {
+        var known = _buckets.FirstOrDefault(b => b.Key == "seven_day")?.ResetsAt;
+        if (known is not { } anchor)
+            return null;
+
+        var cycle = TimeSpan.FromDays(7);
+        if (anchor > now)
+            return anchor;
+        var cycles = (long)Math.Floor((now - anchor) / cycle) + 1;
+        return anchor + TimeSpan.FromTicks(cycle.Ticks * cycles);
     }
 
     private static string PrettyModelName(string model)
